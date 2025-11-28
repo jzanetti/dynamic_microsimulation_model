@@ -1,0 +1,1 @@
+SAMPLE_DATA_DIR = "etc/data/"

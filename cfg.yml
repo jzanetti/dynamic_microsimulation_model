@@ -1,0 +1,3 @@
+output_dirs:
+  data: "outputs/data"
+  figures: "outputs/figures"
