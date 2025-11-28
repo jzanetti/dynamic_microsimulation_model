@@ -6,7 +6,7 @@ import math
 from os.path import exists
 from os import makedirs
 
-def plot_inputs(df, exclude_col="id", plots_per_row=2, output_dir: str = ""):
+def plot_inputs(df, exclude_cols=["id"], plots_per_row=2, output_dir: str = ""):
     """
     Generate an HTML string with distributions for each column in the DataFrame (excluding the specified column).
     - Histograms for numeric columns.
@@ -19,7 +19,7 @@ def plot_inputs(df, exclude_col="id", plots_per_row=2, output_dir: str = ""):
     :return: HTML string
     """
     # Get all columns except excluded
-    all_cols = [col for col in df.columns if col.lower() != exclude_col.lower()]
+    all_cols = list(df.columns.difference(exclude_cols))
     
     if not all_cols:
         return "<html><body><p>No columns found for distributions.</p></body></html>"

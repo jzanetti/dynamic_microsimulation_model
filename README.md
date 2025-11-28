@@ -14,14 +14,14 @@ The model is created based on the paper [Bronka et al.](https://www.microsimulat
 
 A sample population dataset can be created using:
 ```python
-from process.Python.data import generate_sample_population
+from process.Python.data.sample import generate_sample_population
 sample_pop = generate_sample_population()
 ```
 Or in R:
 ```R
 source("process/R/deps.R")
-source("process/R/data.R", local = data_env)
-sample_pop <- data_env$generate_population()
+source("process/R/data/sample.R", local = sample_env)
+sample_pop <- sample_env$generate_population()
 ```
 
 

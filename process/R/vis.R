@@ -1,8 +1,8 @@
 
-plot_inputs <- function(df, exclude_col = "id", plots_per_row = 2, output_dir = ".") {
+plot_inputs <- function(df, exclude_cols = c("id"), plots_per_row = 2, output_dir = ".") {
   
   # Get all columns except excluded (case insensitive check)
-  all_cols <- names(df)[tolower(names(df)) != tolower(exclude_col)]
+  all_cols <- setdiff(names(df), exclude_cols)
   
   if (length(all_cols) == 0) {
     return("<html><body><p>No columns found for distributions.</p></body></html>")
