@@ -1,4 +1,4 @@
-ref_year: 2025
+base_year: 2025
 
 output_dirs:
   data: "outputs/data"

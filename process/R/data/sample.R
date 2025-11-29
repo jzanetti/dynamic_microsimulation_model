@@ -77,7 +77,7 @@ simulation_sample_mortality <- function(pop_input,
 }
 
 add_sample_population_status <- function(pop) {
-  pop[, life_stage := "live"]
+  pop[, life_stage := "alive"]
   return(pop)
 }
 

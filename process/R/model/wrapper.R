@@ -23,7 +23,7 @@ run_rate_model <- function(
       data_mapping[[proc_key]] <- unique(target_data[[proc_group_key]])
     }
   }
-  
+
   # 3. Aggregate Population: We select the columns needed + "id"
   cols_to_select <- c(predictors_raw, "id") # Assuming predictors_raw exists in pop
   pop_subset <- pop %>% select(all_of(cols_to_select))

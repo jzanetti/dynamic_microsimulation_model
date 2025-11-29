@@ -102,7 +102,7 @@ def simulation_sample_mortality(
 
 
 def add_sample_population_status(pop: DataFrame) -> DataFrame:
-    pop["life_stage"] = "live"
+    pop["life_stage"] = "alive"
 
     return pop
 

@@ -69,14 +69,14 @@ def fit_aggregated_rate_model(
     # 5. Fit the model
     model_pipeline.fit(X, y)
 
-    new_data_df = DataFrame(
-        {
-            "age_group": ["50-59", "50-59"],
-            "ethnicity_group": ["Asian", "Maori"],
-        }
-    )
+    # new_data_df = DataFrame(
+    #    {
+    #        "age_group": ["50-59", "50-59"],
+    #        "ethnicity_group": ["Asian", "Maori"],
+    #    }
+    # )
 
-    model_pipeline.predict(new_data_df)
+    # model_pipeline.predict(new_data_df)
 
     return model_pipeline
 

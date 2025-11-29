@@ -3,6 +3,7 @@ from process.Python.data.input import create_inputs
 from process.Python.vis import plot_inputs
 from yaml import safe_load as yaml_safe_load
 from process.Python.model.wrapper import run_rate_model
+from process.Python.dmm import run_dmm
 
 
 # ---------------------------
@@ -19,7 +20,10 @@ generate_sample_population()
 # Create input data for DMM
 # ---------------------------
 sample_pop = create_inputs(
-    "etc/sample/", required_data_types=["pop", "mortality"], data_type="parquet"
+    "etc/sample/",
+    required_data_types=["pop", "mortality"],
+    data_type="parquet",
+    base_year=cfg["base_year"],
 )
 
 # ---------------------------
@@ -27,7 +31,7 @@ sample_pop = create_inputs(
 # ---------------------------
 plot_inputs(
     sample_pop["pop"],
-    exclude_cols=["id", "household_id"],
+    exclude_cols=["id", "household_id", "base_year"],
     output_dir=cfg["output_dirs"]["figures"],
 )
 
@@ -45,4 +49,4 @@ for proc_model_name in ["mortality"]:
 # ---------------------------
 # Run DMM processing
 # ---------------------------
-# run_dmm(sample_pop, start_year=2020, years=5)
+run_dmm(sample_pop, cfg, start_year=2025, years=5)
