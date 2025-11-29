@@ -1,9 +1,15 @@
 
 from pandas import DataFrame
 
-def forward(pop: DataFrame) -> DataFrame:
+def forward(pop_data: dict) -> DataFrame:
   
+    pop = pop_data["population"]
+    mortality_data = pop_data["params"]["mortality"]
+
     pop["age"] += 1
+
+    # Obtain mortality probabilities
+
 
 
   # 1. Increment Age

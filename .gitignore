@@ -10,3 +10,4 @@ __pycache__/
 *.Rprofile
 outputs/
 dynamic_microsimulation_model.Rproj
+etc/sample

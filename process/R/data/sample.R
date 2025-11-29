@@ -1,5 +1,23 @@
 
 
+SAMPLE_DATA_CFG <- list(
+  list(code = '1A',       A = 1, S = 0, C = 0, prob = 0.14),
+  list(code = '1S',       A = 0, S = 1, C = 0, prob = 0.10),
+  list(code = '2A',       A = 2, S = 0, C = 0, prob = 0.15),
+  list(code = '1A+1S',    A = 1, S = 1, C = 0, prob = 0.03),
+  list(code = '2S',       A = 0, S = 2, C = 0, prob = 0.08),
+  list(code = '2A+1C',    A = 2, S = 0, C = 1, prob = 0.10),
+  list(code = '2A+2C',    A = 2, S = 0, C = 2, prob = 0.12),
+  list(code = '2A+3C',    A = 2, S = 0, C = 3, prob = 0.05),
+  list(code = '1A+1C',    A = 1, S = 0, C = 1, prob = 0.05),
+  list(code = '1A+2C',    A = 1, S = 0, C = 2, prob = 0.04),
+  list(code = '3A',       A = 3, S = 0, C = 0, prob = 0.05),
+  list(code = '2A+1S',    A = 2, S = 1, C = 0, prob = 0.03),
+  list(code = '2A+1S+1C', A = 2, S = 1, C = 1, prob = 0.02),
+  list(code = 'Others',   A = 2, S = 0, C = 0, prob = 0.04)
+)
+SAMPLE_DATA_DIR = "etc/sample/"
+
 simulation_sample_mortality <- function(pop_input, 
                                         b0 = -4.5, 
                                         b_age = 0.095, 
@@ -51,6 +69,10 @@ simulation_sample_mortality <- function(pop_input,
   # Sort
   setorder(mortality_agg, ethnicity, age_group)
   
+  # rename the ethnicity column
+  mortality_agg <- mortality_agg %>%
+    rename(ethnicity_group = ethnicity)
+  
   return(mortality_agg)
 }
 
@@ -64,7 +86,7 @@ clip_val <- function(x, lower, upper) {
   pmax(lower, pmin(x, upper))
 }
 
-generate_sample_population <- function(n = 1000, seed_num = 42, hh_configs = NULL) {
+generate_sample_population <- function(n = 1000, seed_num = 42, hh_configs = SAMPLE_DATA_CFG) {
   
   if (!is.null(seed_num)) set.seed(seed_num)
   
@@ -281,8 +303,9 @@ generate_sample_population <- function(n = 1000, seed_num = 42, hh_configs = NUL
   pop_data <- as.data.table(df[, c(cols, remaining)])
   pop_data <- add_sample_population_status(pop_data)
   mortality_data <- simulation_sample_mortality(pop_data)
+ 
+  dir.create(SAMPLE_DATA_DIR, showWarnings = FALSE)
   
-  return(list(
-    population = as.data.frame(pop_data), 
-    mortality = as.data.frame(mortality_data)))
+  write_parquet(as.data.frame(pop_data), paste0(SAMPLE_DATA_DIR, "/pop_data.parquet"))
+  write_parquet(as.data.frame(mortality_data), paste0(SAMPLE_DATA_DIR, "/mortality_data.parquet"))
 }

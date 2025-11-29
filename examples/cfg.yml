@@ -1,6 +1,14 @@
-
 ref_year: 2025
 
 output_dirs:
   data: "outputs/data"
+  models: "outputs/models"
   figures: "outputs/figures"
+
+models:
+  mortality:
+    type: "linear"
+    predictors:
+      - "age"
+      - "ethnicity"
+    target: "deaths"
