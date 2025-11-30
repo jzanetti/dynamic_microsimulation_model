@@ -6,14 +6,20 @@ run_dmm <- function(population_data, cfg, start_year, years = 5) {
   end_year <- start_year + years - 1
   
   results_index <- 1
+  
+  start_pop <- population_data
+  start_pop$year = start_pop$base_year
+  
   for (proc_year in start_year:end_year) {
     print(paste0("Processing Year: ", proc_year))
 
-    proc_pop <- person_env$forward(population_data, proc_year, cfg)
+    proc_pop <- person_env$forward(start_pop, proc_year, cfg)
     
     results[[results_index]] <- proc_pop
     
     results_index <- results_index + 1
+    
+    start_pop = proc_pop
   }
   
   results <- bind_rows(results)

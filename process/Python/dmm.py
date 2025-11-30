@@ -5,6 +5,7 @@ from os import makedirs
 from pandas import concat
 from pyarrow.parquet import write_table as pq_write_table
 import pyarrow as pa
+from copy import deepcopy
 
 logger = getLogger(__name__)
 
@@ -14,19 +15,26 @@ def run_dmm(population_data: dict, cfg: dict, start_year: int, years: int = 5):
     logger.info("Starting DMM Processing")
 
     results = []
+
+    start_pop = deepcopy(population_data["pop"])
+
+    start_pop["year"] = start_pop["base_year"]
+
     for proc_year in range(start_year, start_year + years):
 
         logger.info(f"Processing Year: {proc_year}")
 
-        proc_pop = person_forward(population_data, proc_year, cfg)
+        proc_pop = person_forward(start_pop, proc_year, cfg)
 
         results.append(proc_pop)
+
+        start_pop = deepcopy(proc_pop)
 
     results = concat(results)
 
     results = results.reset_index()
 
-    output_path = f"{cfg["output_dirs"]["outputs"]}/mortality_data.parquet"
+    output_path = f"{cfg["output_dirs"]["outputs"]}/results.parquet"
 
     print(f"Writing outputs: {output_path}")
 

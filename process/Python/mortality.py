@@ -29,24 +29,37 @@ def run_mortality(pop: DataFrame, id_col_name: str, cfg: dict):
         pop[[id_col_name, "life_stage"]], on=id_col_name, how="left"
     )
 
-    pop_working["life_stage_prob"] = mortality_model["model"].predict(pop_working)
-    pop_working["life_stage_prob"] = pop_working["life_stage_prob"].clip(
-        lower=0, upper=1
-    )
-    # when the age goes beyond range (e.g., 105), set the prob to 1.0
-    pop_working.loc[pop_working["age_group"].isna(), "life_stage_prob"] = 1.0
+    pop_working_selected = pop_working[pop_working["life_stage"] == "alive"]
 
-    pop_working = pop_working.groupby(["age", "ethnicity"], group_keys=False).apply(
+    pop_working_selected["life_stage_prob"] = mortality_model["model"].predict(
+        pop_working_selected
+    )
+    pop_working_selected["life_stage_prob"] = pop_working_selected[
+        "life_stage_prob"
+    ].clip(lower=0, upper=1)
+    # when the age goes beyond range (e.g., 105), set the prob to 1.0
+    pop_working_selected.loc[
+        pop_working_selected["age_group"].isna(), "life_stage_prob"
+    ] = 1.0
+
+    pop_working_selected = pop_working_selected.groupby(
+        ["age", "ethnicity"], group_keys=False
+    ).apply(
         assign_random_status,
         selected_col_name="life_stage",
         options={"a": "dead", "b": "alive"},
         condition="alive",
     )
 
-    pop = pop.drop(columns=["life_stage"])
-
     pop = pop.merge(
-        pop_working[[id_col_name, "life_stage"]], on=id_col_name, how="left"
+        pop_working_selected[[id_col_name, "life_stage"]],
+        on=id_col_name,
+        how="left",
+        suffixes=("_old", ""),
     )
+
+    pop["life_stage_old"] = pop["life_stage"].combine_first(pop["life_stage_old"])
+    pop = pop.drop(columns=["life_stage"])
+    pop = pop.rename(columns={"life_stage_old": "life_stage"})
 
     return pop

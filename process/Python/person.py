@@ -6,25 +6,15 @@ from process.Python.mortality import run_mortality
 
 
 def forward(
-    data: dict,
-    forward_year: int,
-    cfg: dict,
-    id_col_name: str = "id",
-    required_data_types: list = ["pop", "mortality"],
+    pop: DataFrame, forward_year: int, cfg: dict, id_col_name: str = "id"
 ) -> DataFrame:
 
-    for proc_data_type in required_data_types:
-        if proc_data_type not in data:
-            raise Exception(f"Data type {proc_data_type} is missing ...")
-
-    pop = data["pop"]
-
-    year_diff = forward_year - int(pop["base_year"].unique())
-
-    pop["year"] = forward_year
+    year_diff = forward_year - int(pop["year"].unique())
 
     if year_diff == 0:
         return pop
+
+    pop["year"] = forward_year
 
     # <><><><><><><><><><><><><><><><>
     # Calculate mortality

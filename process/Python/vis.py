@@ -1,4 +1,5 @@
-from matplotlib.pyplot import subplots, plot, legend, title, savefig, close
+from matplotlib.pyplot import subplots, plot, legend, title, savefig, close, gca
+from matplotlib.ticker import MaxNLocator
 import base64
 from io import BytesIO
 import math
@@ -14,9 +15,19 @@ def plot_outputs(output_results: DataFrame, output_dir: str = ""):
     # Plot population status
     subplots(figsize=(10, 6))
     proc_data = output_results["population"]["pop"]
-    plot(proc_data[proc_data["life_stage"] == "alive"]["count"], label="alive")
-    plot(proc_data[proc_data["life_stage"] == "dead"]["count"], label="dead")
+    plot(
+        proc_data[proc_data["life_stage"] == "alive"]["year"],
+        proc_data[proc_data["life_stage"] == "alive"]["count"],
+        label="alive",
+    )
+    plot(
+        proc_data[proc_data["life_stage"] == "dead"]["year"],
+        proc_data[proc_data["life_stage"] == "dead"]["count"],
+        label="dead",
+    )
     legend()
+    ax = gca()
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     title("Number of people: Alive/Dead")
     savefig(join(output_dir, "results_pop_stats.png"))
     close()
@@ -24,7 +35,9 @@ def plot_outputs(output_results: DataFrame, output_dir: str = ""):
     # Plot household status
     subplots(figsize=(10, 6))
     proc_data = output_results["population"]["hhd"]
-    plot(proc_data["count"])
+    plot(proc_data["year"], proc_data["count"])
+    ax = gca()
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     title("Number of household")
     savefig(join(output_dir, "results_hhd_stats.png"))
     close()

@@ -18,7 +18,7 @@ cfg <- read_yaml("examples/cfg.yml")
 # ---------------------------
 # Create a sample population data
 # ---------------------------
-data_sample_env$generate_sample_population()
+data_sample_env$generate_sample_population(n=10000)
 
 # ---------------------------
 # Create input data for DMM
@@ -52,7 +52,7 @@ for (proc_model_name in c("mortality")) {
 # ---------------------------
 # Run DMM processing
 # ---------------------------
-dmm_env$run_dmm(sample_pop, cfg, start_year=2025, years=5)
+dmm_env$run_dmm(sample_pop[["pop"]], cfg, start_year=2025, years=5)
 
 # ---------------------------
 # Creates outputs

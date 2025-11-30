@@ -24,26 +24,31 @@ run_mortality <- function(pop, id_col_name, cfg) {
   
   # 4. Assign Groups
   pop_working <- data_utils_env$assign_groups(pop, id_col_name, col_mapping)
+  pop_working <- pop_working %>%
+    left_join(pop[, c(id_col_name, "life_stage")], by = id_col_name)
+  
+  pop_working_selected <- pop_working %>%
+    filter(life_stage == "alive")
   
   # 5. First Merge (Left Join)
   # We grab ID and life_stage from original pop
-  pop_subset <- pop %>% select(all_of(id_col_name), life_stage)
-  pop_working <- left_join(pop_working, pop_subset, by = id_col_name)
+  # pop_subset <- pop %>% select(all_of(id_col_name), life_stage)
+  # pop_working_selected <- left_join(pop_working_selected, pop_subset, by = id_col_name)
   
   # 6. Prediction
-  pop_working$life_stage_prob <- predict(
+  pop_working_selected$life_stage_prob <- predict(
     mortality_model$model, 
-    newdata = pop_working, 
+    newdata = pop_working_selected, 
     na.action = na.pass)
   
   # 7. Clip Probabilities (0 to 1)
-  pop_working$life_stage_prob <- pmax(pmin(pop_working$life_stage_prob, 1), 0)
+  pop_working_selected$life_stage_prob <- pmax(pmin(pop_working_selected$life_stage_prob, 1), 0)
   # Sometimes life_stage_prob is NA, this is usually caused by the age goes beyond the 
   # a normal range (e.g., age = 105 etc.), in this case, we set the prob to 1.0
-  pop_working$life_stage_prob[is.na(pop_working$age_group)] <- 1.0
+  pop_working_selected$life_stage_prob[is.na(pop_working_selected$age_group)] <- 1.0
   
   # 8. Groupby and Apply Random Status
-  pop_working <- pop_working %>%
+  pop_working_selected <- pop_working_selected %>%
     group_by(age, ethnicity) %>%
     group_modify(~ data_utils_env$assign_random_status(
       .x,
@@ -53,15 +58,15 @@ run_mortality <- function(pop, id_col_name, cfg) {
     )) %>%
     ungroup()
   
-  # 9. Drop old column and Merge new results
-  # Remove 'life_stage' from original pop
-  pop <- pop %>% select(-life_stage)
+  pop <- pop %>%
+    left_join(pop_working_selected[
+      , c(id_col_name, "life_stage")], 
+      by = id_col_name, suffix = c("_old", ""))
   
-  # Merge the updated life_stage back
-  # We select only ID and life_stage from the working df
-  cols_to_merge <- pop_working %>% select(all_of(id_col_name), life_stage)
-  
-  pop <- left_join(pop, cols_to_merge, by = id_col_name)
+  pop <- pop %>%
+    mutate(life_stage_old = coalesce(life_stage, life_stage_old)) %>%
+    select(-life_stage) %>%
+    rename(life_stage = life_stage_old)
   
   return(pop)
 }

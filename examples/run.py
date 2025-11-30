@@ -15,7 +15,7 @@ cfg = yaml_safe_load(open("examples/cfg.yml"))
 # ---------------------------
 # Create a sample population data
 # ---------------------------
-generate_sample_population()
+generate_sample_population(n=10000)
 
 # ---------------------------
 # Create input data for DMM
