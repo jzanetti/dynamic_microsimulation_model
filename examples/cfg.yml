@@ -4,6 +4,7 @@ output_dirs:
   data: "outputs/data"
   models: "outputs/models"
   figures: "outputs/figures"
+  outputs: "outputs/outputs"
 
 models:
   mortality:

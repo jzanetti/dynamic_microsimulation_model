@@ -19,6 +19,8 @@ forward <- function(data,
   current_base_year <- as.integer(unique(pop$base_year))
   year_diff <- forward_year - current_base_year
   
+  pop$year <- forward_year
+  
   # 4. Early return if no time has passed
   if (year_diff == 0) {
     return(pop)

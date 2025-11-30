@@ -1,4 +1,67 @@
 
+
+plot_outputs <- function(output_results, output_dir = "") {
+
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+  # --- 1. Plot Population Status (pop_stats) ---
+  pop_stats <- output_results$population$pop
+  
+  # Python: Two lines (alive/dead) on one plot
+  pop_plot <- pop_stats %>%
+    mutate(year = as.integer(year)) %>%
+    ggplot(aes(x = year, y = count, color = life_stage)) +
+    geom_line(linewidth = 1) +
+    geom_point(size = 2) +
+    labs(
+      title = "Number of people: Alive/Dead",
+      x = "Year",
+      y = "Count",
+      color = "Life Stage" # Set legend title
+    ) +
+    scale_x_continuous(breaks = unique(pop_stats$year)) + # Ensure integer years on x-axis
+    theme_minimal()
+  
+  # R equivalent of savefig(join(output_dir, "results_pop_stats.png"))
+  ggsave(
+    filename = file.path(output_dir, "results_pop_stats.png"),
+    plot = pop_plot,
+    width = 10,
+    height = 6
+  )
+  
+  # --- 2. Plot Household Status (hhd_stats) ---
+  hhd_stats <- output_results$population$hhd
+  
+  # Ensure 'year' is treated as a continuous variable
+  hhd_stats <- hhd_stats %>%
+    mutate(year = as.integer(year))
+  
+  # Python: Single line plot
+  hhd_plot <- hhd_stats %>%
+    mutate(year = as.integer(year)) %>%
+    ggplot(aes(x = year, y = count)) +
+    geom_line(linewidth = 1, color = "darkblue") +
+    geom_point(size = 2, color = "darkblue") +
+    labs(
+      title = "Number of households",
+      x = "Year",
+      y = "Count"
+    ) +
+    scale_x_continuous(breaks = unique(hhd_stats$year)) +
+    theme_minimal()
+  
+  # R equivalent of savefig(join(output_dir, "results_hhd_stats.png"))
+  ggsave(
+    filename = file.path(output_dir, "results_hhd_stats.png"),
+    plot = hhd_plot,
+    width = 10,
+    height = 6
+  )
+}
+
+
+
 plot_inputs <- function(df, exclude_cols = c("id"), plots_per_row = 2, output_dir = ".") {
   
   # Get all columns except excluded (case insensitive check)

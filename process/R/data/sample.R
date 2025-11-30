@@ -31,7 +31,7 @@ simulation_sample_mortality <- function(pop_input,
   
   # Create a deep copy (in data.table, copy() ensures we don't modify the input by reference)
   pop <- copy(pop_input)
-  
+
   # Map ethnicity offsets
   # unlist helps match the dictionary lookup style
   pop[, b_eth := as.numeric(unlist(eth_offset_map)[ethnicity])]
@@ -49,7 +49,7 @@ simulation_sample_mortality <- function(pop_input,
   pop[, deaths := rbinom(.N, size = 1, prob = true_rate)]
   
   # Filter for deaths only
-  mortality_data <- pop[deaths == 1, .(age, ethnicity, deaths)]
+  mortality_data <- pop[deaths %in% c(0, 1), .(age, ethnicity, deaths)]
   
   # Binning Logic
   # Python: range(0, 111, 10) -> R: seq(0, 110, 10)
@@ -57,7 +57,6 @@ simulation_sample_mortality <- function(pop_input,
   # labels logic: paste0(i, "-", i+9)
   bin_labels <- paste0(head(bins, -1), "-", head(bins, -1) + 9)
   
-  # Python: cut(..., right=False) -> R: cut(..., right = FALSE)
   mortality_data[, age_group := cut(age, breaks = bins, labels = bin_labels, right = FALSE)]
   
   # Group by 'age_group' and 'ethnicity'
@@ -248,13 +247,13 @@ generate_sample_population <- function(n = 1000, seed_num = 42, hh_configs = SAM
   }
   
   # Employment (18-64)
-  df$employment_status <- 'Not in Labor Force'
-  df$labour_income <- 0.0
-  mask_work <- df$age >= 18 & df$age < 65
+  # df$employment_status <- 'Not in Labor Force'
+  # df$labour_income <- 0.0
+  # mask_work <- df$age >= 18 & df$age < 65
   
-  if (any(mask_work)) {
-    df$employment_status[mask_work] <- sample(c('Employed', 'Unemployed'), sum(mask_work), replace = TRUE, prob = c(0.95, 0.05))
-  }
+  # if (any(mask_work)) {
+  #  df$employment_status[mask_work] <- sample(c('Employed', 'Unemployed'), sum(mask_work), replace = TRUE, prob = c(0.95, 0.05))
+  # }
   
   # Wages
   # rlnorm takes meanlog and sdlog
@@ -263,24 +262,25 @@ generate_sample_population <- function(n = 1000, seed_num = 42, hh_configs = SAM
   educ_map <- c('None' = 0, 'Low' = 0.85, 'Medium' = 1.0, 'High' = 1.35)
   # Match education level to multiplier
   educ_mult <- educ_map[df$education_level]
-  df$wage_offer <- base_wage * educ_mult
+  df$market_income <- base_wage * educ_mult
+  df$market_income[df$age >= 65] <- 0
   
-  emp_mask <- df$employment_status == 'Employed'
-  df$labour_income[emp_mask] <- df$wage_offer[emp_mask]
+  # emp_mask <- df$employment_status == 'Employed'
+  # df$labour_income[emp_mask] <- df$wage_offer[emp_mask]
   
   # Wealth & Investments
-  age_factor <- df$age / 50.0
-  wealth_base <- rlnorm(n, meanlog = 10.5, sdlog = 1.8)
-  df$wealth_stock <- wealth_base * age_factor
-  df$wealth_stock[df$age < 18] <- 0
-  df$investment_income <- df$wealth_stock * 0.04
+  # age_factor <- df$age / 50.0
+  # wealth_base <- rlnorm(n, meanlog = 10.5, sdlog = 1.8)
+  # df$wealth_stock <- wealth_base * age_factor
+  # df$wealth_stock[df$age < 18] <- 0
+  # df$investment_income <- df$wealth_stock * 0.04
   
   # NZ Super (Universal for 65+)
-  super_mask <- df$age >= 65
-  df$labour_income[super_mask] <- df$labour_income[super_mask] + 26000
+  df$benefit_income[df$age < 65] <- 0
+  df$benefit_income[df$age >= 65] <- 26000
   
   # --- 4. Final Aggregations ---
-  df$disposable_income <- df$labour_income + df$investment_income
+  # df$disposable_income <- df$labour_income + df$investment_income
   
   # Calculate Household Composition Columns
   hh_stats <- df %>%
@@ -297,7 +297,7 @@ generate_sample_population <- function(n = 1000, seed_num = 42, hh_configs = SAM
   
   # Reorder columns
   cols <- c('id', 'household_id', 'household_type', 'role', 'age', 'n_adults', 'n_seniors', 'n_children',
-            'gender', 'region', 'ethnicity', 'disposable_income')
+            'gender', 'region', 'ethnicity', 'market_income', 'benefit_income')
   remaining <- setdiff(names(df), cols)
   
   pop_data <- as.data.table(df[, c(cols, remaining)])

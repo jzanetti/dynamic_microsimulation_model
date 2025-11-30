@@ -23,7 +23,6 @@ run_mortality <- function(pop, id_col_name, cfg) {
   }
   
   # 4. Assign Groups
-  # Assuming assign_groups is a defined R function available in your environment
   pop_working <- data_utils_env$assign_groups(pop, id_col_name, col_mapping)
   
   # 5. First Merge (Left Join)
@@ -32,10 +31,16 @@ run_mortality <- function(pop, id_col_name, cfg) {
   pop_working <- left_join(pop_working, pop_subset, by = id_col_name)
   
   # 6. Prediction
-  pop_working$life_stage_prob <- predict(mortality_model$model, newdata = pop_working)
+  pop_working$life_stage_prob <- predict(
+    mortality_model$model, 
+    newdata = pop_working, 
+    na.action = na.pass)
   
   # 7. Clip Probabilities (0 to 1)
   pop_working$life_stage_prob <- pmax(pmin(pop_working$life_stage_prob, 1), 0)
+  # Sometimes life_stage_prob is NA, this is usually caused by the age goes beyond the 
+  # a normal range (e.g., age = 105 etc.), in this case, we set the prob to 1.0
+  pop_working$life_stage_prob[is.na(pop_working$age_group)] <- 1.0
   
   # 8. Groupby and Apply Random Status
   pop_working <- pop_working %>%

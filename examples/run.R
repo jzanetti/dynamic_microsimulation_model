@@ -2,6 +2,7 @@ source("process/R/deps.R")
 source("process/R/data/sample.R", local = data_sample_env)
 source("process/R/data/utils.R", local = data_utils_env)
 source("process/R/data/input.R", local = data_input_env)
+source("process/R/data/output.R", local = data_output_env)
 source("process/R/model/wrapper.R", local = model_wrapper_env)
 source("process/R/model/linear.R", local = model_linear_env)
 source("process/R/vis.R", local = vis_env)
@@ -17,7 +18,7 @@ cfg <- read_yaml("examples/cfg.yml")
 # ---------------------------
 # Create a sample population data
 # ---------------------------
-# data_sample_env$generate_sample_population()
+data_sample_env$generate_sample_population()
 
 # ---------------------------
 # Create input data for DMM
@@ -52,3 +53,13 @@ for (proc_model_name in c("mortality")) {
 # Run DMM processing
 # ---------------------------
 dmm_env$run_dmm(sample_pop, cfg, start_year=2025, years=5)
+
+# ---------------------------
+# Creates outputs
+# ---------------------------
+output_results <- data_output_env$create_outputs(cfg[["output_dirs"]][["outputs"]])
+
+# ---------------------------
+# Plot outputs
+# ---------------------------
+vis_env$plot_outputs(output_results, cfg[["output_dirs"]][["figures"]])

@@ -2,6 +2,7 @@ from os.path import join
 from pickle import load as pickle_load
 from process.Python.data.utils import assign_groups, assign_random_status
 from pandas import DataFrame
+from numpy import isnan
 
 
 def run_mortality(pop: DataFrame, id_col_name: str, cfg: dict):
@@ -32,6 +33,8 @@ def run_mortality(pop: DataFrame, id_col_name: str, cfg: dict):
     pop_working["life_stage_prob"] = pop_working["life_stage_prob"].clip(
         lower=0, upper=1
     )
+    # when the age goes beyond range (e.g., 105), set the prob to 1.0
+    pop_working.loc[pop_working["age_group"].isna(), "life_stage_prob"] = 1.0
 
     pop_working = pop_working.groupby(["age", "ethnicity"], group_keys=False).apply(
         assign_random_status,

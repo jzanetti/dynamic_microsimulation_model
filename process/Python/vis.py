@@ -1,10 +1,33 @@
-from matplotlib import pyplot as plt
+from matplotlib.pyplot import subplots, plot, legend, title, savefig, close
 import base64
 from io import BytesIO
 import math
 from os.path import exists
+
 from os import makedirs
 from pandas import DataFrame
+from os.path import join
+
+
+def plot_outputs(output_results: DataFrame, output_dir: str = ""):
+
+    # Plot population status
+    subplots(figsize=(10, 6))
+    proc_data = output_results["population"]["pop"]
+    plot(proc_data[proc_data["life_stage"] == "alive"]["count"], label="alive")
+    plot(proc_data[proc_data["life_stage"] == "dead"]["count"], label="dead")
+    legend()
+    title("Number of people: Alive/Dead")
+    savefig(join(output_dir, "results_pop_stats.png"))
+    close()
+
+    # Plot household status
+    subplots(figsize=(10, 6))
+    proc_data = output_results["population"]["hhd"]
+    plot(proc_data["count"])
+    title("Number of household")
+    savefig(join(output_dir, "results_hhd_stats.png"))
+    close()
 
 
 def plot_inputs(
@@ -73,7 +96,7 @@ def plot_inputs(
                 plot_type = plot_types[column]
 
                 # Create figure
-                fig, ax = plt.subplots(figsize=(6, 4))
+                fig, ax = subplots(figsize=(6, 4))
 
                 if plot_type == "hist":
                     df[column].hist(ax=ax, bins=20)
@@ -101,7 +124,7 @@ def plot_inputs(
                 fig.savefig(buffer, format="png", bbox_inches="tight")
                 buffer.seek(0)
                 image_base64 = base64.b64encode(buffer.read()).decode("utf-8")
-                plt.close(fig)
+                close(fig)
 
                 # Add to HTML
                 html += f'<td><img src="data:image/png;base64,{image_base64}" alt="{column} distribution"></td>'

@@ -1,6 +1,7 @@
 from process.Python.data.sample import generate_sample_population
 from process.Python.data.input import create_inputs
-from process.Python.vis import plot_inputs
+from process.Python.data.output import create_outputs
+from process.Python.vis import plot_inputs, plot_outputs
 from yaml import safe_load as yaml_safe_load
 from process.Python.model.wrapper import run_rate_model
 from process.Python.dmm import run_dmm
@@ -50,3 +51,13 @@ for proc_model_name in ["mortality"]:
 # Run DMM processing
 # ---------------------------
 run_dmm(sample_pop, cfg, start_year=2025, years=5)
+
+# ---------------------------
+# Creates outputs
+# ---------------------------
+output_results = create_outputs(data_dir=cfg["output_dirs"]["outputs"])
+
+# ---------------------------
+# Plot outputs
+# ---------------------------
+plot_outputs(output_results, output_dir=cfg["output_dirs"]["figures"])

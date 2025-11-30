@@ -75,7 +75,7 @@ def simulation_sample_mortality(
 
     # Select specific columns
     mortality_data = pop[["age", "ethnicity", "deaths"]]
-    mortality_data = mortality_data[mortality_data["deaths"] == 1]
+    # mortality_data = mortality_data[mortality_data["deaths"] == 1]
 
     bins = range(0, 111, 10)
     labels = [f"{i}-{i+9}" for i in bins[:-1]]
@@ -244,38 +244,36 @@ def generate_sample_population(
     )
 
     # Employment (Only 18-64)
-    df["employment_status"] = "Not in Labor Force"
-    df["labour_income"] = 0.0
-    mask_work = (df["age"] >= 18) & (df["age"] < 65)
+    # df["employment_status"] = "Not in Labor Force"
+    # df["labour_income"] = 0.0
+    # mask_work = (df["age"] >= 18) & (df["age"] < 65)
 
-    if mask_work.any():
-        df.loc[mask_work, "employment_status"] = choice(
-            ["Employed", "Unemployed"], size=mask_work.sum(), p=[0.95, 0.05]
-        )
+    # if mask_work.any():
+    #    df.loc[mask_work, "employment_status"] = choice(
+    #        ["Employed", "Unemployed"], size=mask_work.sum(), p=[0.95, 0.05]
+    #    )
 
     # Wages
     base_wage = lognormal(mean=10.6, sigma=0.5, size=n)
     educ_map = {"None": 0, "Low": 0.85, "Medium": 1.0, "High": 1.35}
-    df["wage_offer"] = base_wage * df["education_level"].map(educ_map)
+    df["market_income"] = base_wage * df["education_level"].map(educ_map)
+    df.loc[df["age"] >= 65, "market_income"] = 0
 
-    emp_mask = df["employment_status"] == "Employed"
-    df.loc[emp_mask, "labour_income"] = df.loc[emp_mask, "wage_offer"]
+    # emp_mask = df["employment_status"] == "Employed"
+    # df.loc[emp_mask, "labour_income"] = df.loc[emp_mask, "wage_offer"]
 
     # Wealth & Investments
-    age_factor = df["age"] / 50.0
-    wealth_base = lognormal(mean=10.5, sigma=1.8, size=n)
-    df["wealth_stock"] = wealth_base * age_factor
-    df.loc[df["age"] < 18, "wealth_stock"] = 0
-    df["investment_income"] = df["wealth_stock"] * 0.04
+    # age_factor = df["age"] / 50.0
+    # wealth_base = lognormal(mean=10.5, sigma=1.8, size=n)
+    # df["wealth_stock"] = wealth_base * age_factor
+    # df.loc[df["age"] < 18, "wealth_stock"] = 0
+    # df["investment_income"] = df["wealth_stock"] * 0.04
 
     # NZ Super (Universal for 65+)
     # Note: We don't check employment status, as you can work and get Super,
     # though tax rates differ. We just add the income.
-    super_mask = df["age"] >= 65
-    df.loc[super_mask, "labour_income"] += 26000  # Approx annual net super
-
-    # --- 4. Final Aggregations ---
-    df["disposable_income"] = df["labour_income"] + df["investment_income"]
+    df.loc[df["age"] < 65, "benefit_income"] = 0
+    df.loc[df["age"] >= 65, "benefit_income"] = 26000  # Approx annual net super
 
     # Calculate Household Composition Columns (for easy filtering later)
     # We group by ID and count specific age brackets
@@ -309,7 +307,8 @@ def generate_sample_population(
         "gender",
         "region",
         "ethnicity",
-        "disposable_income",
+        "market_income",
+        "benefit_income",
     ]
     remaining = [c for c in df.columns if c not in cols]
 

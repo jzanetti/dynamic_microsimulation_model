@@ -21,6 +21,8 @@ def forward(
 
     year_diff = forward_year - int(pop["base_year"].unique())
 
+    pop["year"] = forward_year
+
     if year_diff == 0:
         return pop
 
@@ -34,4 +36,4 @@ def forward(
     # <><><><><><><><><><><><><><><><>
     pop = run_mortality(pop, id_col_name=id_col_name, cfg=cfg)
 
-    x = 3
+    return pop
