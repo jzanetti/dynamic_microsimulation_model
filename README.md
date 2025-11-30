@@ -27,6 +27,29 @@ sample_env$generate_population()
 
 Sample data is written in the directory `etc/sample` in the `parquet` format
 
+### Step 2: Load the input data
+
+The input data can be loaded as via `Python`:
+
+```python
+sample_pop = create_inputs(
+    <the directory of input data in parquet>,
+    required_data_types=<what data to be userd>,
+    data_type="parquet",
+    base_year=cfg["base_year"],
+)
+```
+
+Or in `R`
+
+```R
+sample_pop <- data_input_env$create_inputs(
+  <the directory of input data in parquet>, # for example "etc/sample",
+  required_data_types = <what data to be userd>, # for example, c("pop", "mortality"),
+  data_type = "parquet",
+  base_year=cfg[["base_year"]])
+```
+
 ## Developers
 
 ### Python
