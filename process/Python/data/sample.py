@@ -8,6 +8,7 @@ from os.path import exists, join
 from os import makedirs
 import pyarrow as pa
 from pyarrow.parquet import read_table as pq_read_table
+from numpy import maximum, where, select
 
 SAMPLE_DATA_DIR = "etc/sample/"
 SAMPLE_DATA_CFG = {
@@ -43,6 +44,25 @@ SAMPLE_DATA_CFG = {
         {"code": "2A+1S+1C", "A": 2, "S": 1, "C": 1, "prob": 0.02},  # 3-Generation home
         {"code": "Others", "A": 2, "S": 0, "C": 0, "prob": 0.04},  # Catch-all
     ]
+}
+
+EMP_PARAMS = {
+    "age_base_prob": {
+        (0, 14): 0.00,
+        (15, 19): 0.40,
+        (20, 29): 0.75,
+        (30, 54): 0.88,  # Prime age peak
+        (55, 64): 0.7,
+        (65, 74): 0.02,
+        (75, 100): 0.0,
+    },
+    "gender_multiplier": {"Male": 1.0, "Female": 0.88},  # 12% penalty relative to base
+    "education_multiplier": {
+        "Not finished": 0.30,  # Significant penalty
+        "School": 0.90,  # Slight penalty
+        "Vocational": 1.05,  # Slight boost
+        "University": 1.2,  # Boost
+    },
 }
 
 
@@ -116,19 +136,121 @@ def generate_sample_supplements(required_data_types: list = ["mortality"]):
         pq_write_table(pa.Table.from_pandas(mortality_data), mortality_data_path)
 
 
+def obtain_employment_status(df, params):
+    df = df.copy()
+
+    # --- A. Apply Age Probabilities (The Base) ---
+    # We use pd.cut to map continuous age to the buckets in the dict
+
+    # Extract bins and values from the dict
+    bins = []
+    labels = []
+
+    # We sort keys to ensure bins are in order
+    sorted_age_keys = sorted(params["age_base_prob"].keys())
+
+    # Construct bins for pd.cut (e.g., [0, 14, 19, 29...])
+    # Note: pd.cut includes the right edge by default
+    bins.append(sorted_age_keys[0][0])  # Start point (0)
+    for r in sorted_age_keys:
+        bins.append(r[1])  # End points
+        labels.append(params["age_base_prob"][r])
+
+    # Map Age to Base Probability
+    df["base_prob"] = cut(
+        df["age"], bins=bins, labels=labels, include_lowest=True, ordered=False
+    ).astype(
+        float
+    )  # Ensure float type
+
+    # Handle NaN (ages outside defined bins)
+    df["base_prob"] = df["base_prob"].fillna(0.0)
+
+    # --- B. Apply Multipliers (Gender & Education) ---
+    # simple .map() functions are very fast
+    gender_factor = df["gender"].map(params["gender_multiplier"]).fillna(1.0)
+    edu_factor = df["education_level"].map(params["education_multiplier"]).fillna(1.0)
+
+    # --- C. Calculate Joint Probability ---
+    # Formula: Base * Gender_Scaler * Edu_Scaler
+    df["prob_employed"] = df["base_prob"] * gender_factor * edu_factor
+
+    # --- D. Add Uncertainty (Noise) ---
+    # Add +/- noise (mean 0, std 0.07)
+    noise = normal(loc=0.0, scale=0.07, size=len(df))
+    df["prob_employed"] = df["prob_employed"] + noise
+
+    # --- E. Final Clip and Draw ---
+    # Ensure probability is strictly 0.0 to 1.0
+    df["prob_employed"] = df["prob_employed"].clip(0, 1)
+
+    # Generate boolean status
+    random_draws = random(size=len(df))
+    df["is_employed"] = random_draws < df["prob_employed"]
+
+    # Cleanup temp columns (optional)
+    # df = df.drop(columns=["base_prob", "prob_employed"])
+
+    return df
+
+
+def obtain_market_income(df: DataFrame):
+
+    # D. Market Income Calculation
+    # 1. Base Wage (Annual, Full-time equivalent baseline)
+    base_wage_dist = lognormal(
+        mean=10.6, sigma=0.1, size=len(df)
+    )  # Centered approx $40k-$50k before modifiers
+
+    # 2. Education Multiplier
+    educ_map = {
+        "Not finished": 0.15,
+        "School": 0.85,
+        "Vocational": 1.10,
+        "University": 1.55,
+    }
+    edu_factor = df["education_level"].map(educ_map)
+
+    # 3. Age Multiplier (The "Career Arc")
+    # Quadratic curve: Income rises, peaks around 45-50, then softens
+    # Formula: 1 + 0.02*(Age-20) - 0.0003*(Age-20)^2
+    # We clip age to 18 to avoid issues
+    age_calc = clip(df["age"], 18, 80)
+    age_factor = 1 + 0.025 * (age_calc - 20) - 0.00035 * (age_calc - 20) ** 2
+    age_factor = maximum(age_factor, 0.5)  # Prevent negative or too low multipliers
+
+    # 4. Gender Multiplier (Statistical Wage Gap)
+    # 1.0 for Male, approx 0.90 for Female (10% gap)
+    gender_factor = where(df["gender"] == "Male", 1.0, 0.90)
+
+    # 5. Calculate Final Market Income
+    df["market_income"] = base_wage_dist * edu_factor * age_factor * gender_factor
+
+    # 6. Apply Unemployment (Zero market income if not employed)
+    df.loc[~df["is_employed"], "market_income"] = 0
+
+    # Rounding
+    df["market_income"] = df["market_income"].round(0)
+
+    return df
+
+
+def obtain_benefit_income(df: DataFrame):
+    # E. Benefit Income (Simple Superannuation)
+    df["benefit_income"] = 0.0
+    # NZ Super: Universal for 65+, approx 26k net
+    df.loc[df["age"] >= 65, "benefit_income"] = 26000
+    return df
+
+
 def generate_sample_population(
     n: int = 1000, seed_num: int = 42, hh_configs=SAMPLE_DATA_CFG["household_types"]
 ) -> DataFrame:
     if seed_num is not None:
         seed(seed_num)
 
-    # --- 1. Define Household Compositions (The Archetypes) ---
-    # Probabilities approximated from Stats NZ Household Composition data
-    # A = Adult (18-64), S = Senior (65+), C = Child (0-17)
-
-    # Validate probabilities sum to 1
+    # --- 1. Define Household Compositions ---
     probs = [x["prob"] for x in hh_configs]
-    # Normalize just in case of float errors
     probs = array(probs) / sum(probs)
 
     # --- 2. Generate Households Loop ---
@@ -137,144 +259,104 @@ def generate_sample_population(
     current_n = 0
 
     while current_n < n:
-        # Pick a configuration
         config_idx = choice(range(len(hh_configs)), p=probs)
         config = hh_configs[config_idx]
-
         members = []
 
-        # --- Age Generation Logic ---
-        # We need a reference "Head" age to ensure family ages make sense
-        # (e.g., parents must be older than children).
-
-        # 1. Determine Head Age based on composition type
+        # -- (Existing Age Logic Preserved) --
         if config["S"] > 0 and config["A"] == 0:
-            # Senior only household
             head_age = randint(65, 90)
         elif config["C"] > 0:
-            # Family: Head usually 25-55
             head_age = int(normal(40, 8))
             head_age = clip(head_age, 20, 60)
         elif config["S"] > 0 and config["A"] > 0:
-            # Mixed Adult/Senior: Head likely near 60
             head_age = randint(55, 70)
         else:
-            # Standard Adult: 18-64
             head_age = int(normal(35, 12))
             head_age = clip(head_age, 18, 64)
 
-        # 2. Create Adults (18-64)
+        # Create Adults
         for i in range(config["A"]):
-            if i == 0 and config["S"] == 0:
-                # Use head age if this is the first adult and no seniors exist
-                age = head_age
-            else:
-                # Other adults (partners/flatmates) usually close in age
-                age = head_age + randint(-5, 6)
+            age = (
+                head_age if (i == 0 and config["S"] == 0) else head_age + randint(-5, 6)
+            )
+            members.append({"role": "Adult", "age": clip(age, 18, 64)})
 
-            # Force constrain to definition
-            age = clip(age, 18, 64)
-            members.append({"role": "Adult", "age": age})
-
-        # 3. Create Seniors (65+)
+        # Create Seniors
         for i in range(config["S"]):
             if config["A"] == 0 and i == 0:
-                age = head_age  # Head is the senior
+                age = head_age
+            elif config["A"] > 0:
+                age = head_age + randint(20, 30)
             else:
-                # If living with adults, might be much older (parent) or same age (partner)
-                if config["A"] > 0:
-                    age = head_age + randint(20, 30)  # Likely parent of the adult
-                else:
-                    age = head_age + randint(-5, 6)  # Partner of senior head
+                age = head_age + randint(-5, 6)
+            members.append({"role": "Senior", "age": max(65, age)})
 
-            age = max(65, age)  # Enforce definition
-            members.append({"role": "Senior", "age": age})
-
-        # 4. Create Children (0-17)
+        # Create Children
         for i in range(config["C"]):
-            # Kids usually 20-40 years younger than head
             age = head_age - randint(20, 42)
-            age = clip(age, 0, 17)  # Enforce definition
-            members.append({"role": "Child", "age": age})
+            members.append({"role": "Child", "age": clip(age, 0, 17)})
 
-        # --- Assign Common Attributes ---
-        # Region: Assigned per household so they live together
+        # Assign Attributes
         hh_region = choice(
             ["Auckland", "Wellington", "Christchurch", "Others"],
             p=[0.34, 0.10, 0.08, 0.48],
         )
 
         for m in members:
-            # Stop if we hit exact N limit (optional, depends if you want partial families)
             if current_n >= n + 50:
                 break
-
-            m["household_id"] = hh_id
-            m["household_type"] = config["code"]
-            m["region"] = hh_region
-            m["gender"] = choice(["Male", "Female"], p=[0.49, 0.51])
+            m.update(
+                {
+                    "household_id": hh_id,
+                    "household_type": config["code"],
+                    "region": hh_region,
+                    "gender": choice(["Male", "Female"], p=[0.49, 0.51]),
+                }
+            )
             people_data.append(m)
             current_n += 1
-
         hh_id += 1
 
-    # Convert to DataFrame
     df = DataFrame(people_data).iloc[:n].copy()
     df["id"] = arange(1, n + 1)
 
-    # --- 3. Demographic & Socio-Economic Logic (Applied to Individuals) ---
-    # Ethnicity (Age Dependent)
+    # --- 3. Demographic & Socio-Economic Logic (UPDATED) ---
+    # A. Ethnicity
     df["ethnicity"] = "European"
     eth_cats = ["European", "Maori", "Pacific", "Asian", "Other"]
 
-    mask_young = df["age"] < 20
-    if mask_young.any():
-        df.loc[mask_young, "ethnicity"] = choice(
-            eth_cats, size=mask_young.sum(), p=[0.50, 0.25, 0.12, 0.10, 0.03]
-        )
-
-    mask_adult = (df["age"] >= 20) & (df["age"] < 65)
-    if mask_adult.any():
-        df.loc[mask_adult, "ethnicity"] = choice(
-            eth_cats, size=mask_adult.sum(), p=[0.60, 0.15, 0.08, 0.14, 0.03]
-        )
-
-    mask_old = df["age"] >= 65
-    if mask_old.any():
-        df.loc[mask_old, "ethnicity"] = choice(
-            eth_cats, size=mask_old.sum(), p=[0.85, 0.07, 0.03, 0.04, 0.01]
-        )
-
-    # Education (Only relevant for 18+)
-    df["education_level"] = "None"
-    mask_edu = df["age"] >= 18
-    df.loc[mask_edu, "education_level"] = choice(
-        ["Low", "Medium", "High"], size=mask_edu.sum(), p=[0.35, 0.40, 0.25]
+    # Vectorized assignment for speed
+    df.loc[df["age"] < 20, "ethnicity"] = choice(
+        eth_cats, size=(df["age"] < 20).sum(), p=[0.50, 0.25, 0.12, 0.10, 0.03]
+    )
+    df.loc[(df["age"] >= 20) & (df["age"] < 65), "ethnicity"] = choice(
+        eth_cats,
+        size=((df["age"] >= 20) & (df["age"] < 65)).sum(),
+        p=[0.60, 0.15, 0.08, 0.14, 0.03],
+    )
+    df.loc[df["age"] >= 65, "ethnicity"] = choice(
+        eth_cats, size=(df["age"] >= 65).sum(), p=[0.85, 0.07, 0.03, 0.04, 0.01]
     )
 
-    base_wage = lognormal(mean=10.6, sigma=0.5, size=n)
-    educ_map = {"None": 0, "Low": 0.85, "Medium": 1.0, "High": 1.35}
-    df["market_income"] = base_wage * df["education_level"].map(educ_map)
-    df.loc[df["age"] >= 65, "market_income"] = 0
+    # B. Education Assignment (18+)
+    # Adjusted to align with income multipliers
+    df["education_level"] = "Not finished"  # Under 18 or no qual
+    mask_edu = df["age"] >= 18
+    # Distribution: No Qual/School, Vocational/Trade, Bachelor+
+    df.loc[mask_edu, "education_level"] = choice(
+        ["Not finished", "School", "Vocational", "University"],
+        size=mask_edu.sum(),
+        p=[0.1, 0.35, 0.35, 0.2],
+    )
 
-    # emp_mask = df["employment_status"] == "Employed"
-    # df.loc[emp_mask, "labour_income"] = df.loc[emp_mask, "wage_offer"]
+    # C. Employment Status (The "Unemployed" Logic)
+    # We assign probability of being employed based on Age Group
+    df = obtain_employment_status(df, EMP_PARAMS)
+    df = obtain_market_income(df)
+    df = obtain_benefit_income(df)
 
-    # Wealth & Investments
-    # age_factor = df["age"] / 50.0
-    # wealth_base = lognormal(mean=10.5, sigma=1.8, size=n)
-    # df["wealth_stock"] = wealth_base * age_factor
-    # df.loc[df["age"] < 18, "wealth_stock"] = 0
-    # df["investment_income"] = df["wealth_stock"] * 0.04
-
-    # NZ Super (Universal for 65+)
-    # Note: We don't check employment status, as you can work and get Super,
-    # though tax rates differ. We just add the income.
-    df.loc[df["age"] < 65, "benefit_income"] = 0
-    df.loc[df["age"] >= 65, "benefit_income"] = 26000  # Approx annual net super
-
-    # Calculate Household Composition Columns (for easy filtering later)
-    # We group by ID and count specific age brackets
+    # --- 4. Final Data Cleanup ---
     hh_stats = (
         df.groupby("household_id")["age"]
         .apply(
@@ -289,32 +371,31 @@ def generate_sample_population(
         .unstack()
     )
 
-    # Join these counts back to the main dataframe
     df = df.merge(hh_stats, on="household_id", how="left")
 
-    # Reorder for clarity
     cols = [
         "id",
         "household_id",
         "household_type",
         "role",
         "age",
+        "gender",
+        "ethnicity",
+        "region",
+        "education_level",
+        "is_employed",
+        "market_income",
+        "benefit_income",
         "n_adults",
         "n_seniors",
         "n_children",
-        "gender",
-        "region",
-        "ethnicity",
-        "market_income",
-        "benefit_income",
     ]
-    remaining = [c for c in df.columns if c not in cols]
 
-    pop_data = df[cols + remaining]
-    # Write output to parquet
-    pop_data_path = f"{SAMPLE_DATA_DIR}/pop_data.parquet"
-
+    # Write output
     if not exists(SAMPLE_DATA_DIR):
         makedirs(SAMPLE_DATA_DIR)
 
-    pq_write_table(pa.Table.from_pandas(pop_data), pop_data_path)
+    pop_data_path = f"{SAMPLE_DATA_DIR}/pop_data.parquet"
+    pq_write_table(pa.Table.from_pandas(df[cols]), pop_data_path)
+
+    return df

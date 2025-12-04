@@ -56,7 +56,7 @@ linear_model <- function(df, target_col, predictor_cols, population_col = NULL, 
   return(model)
 }
 
-predict_expected_deaths <- function(model, new_data_df) {
-    results <- predict(model, newdata = new_data_df)
-    return(results)
-}
+# predict_expected_deaths <- function(model, new_data_df) {
+#     results <- predict(model, newdata = new_data_df)
+#     return(results)
+# }

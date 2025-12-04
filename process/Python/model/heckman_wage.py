@@ -1,10 +1,16 @@
 import statsmodels.api as sm
 from scipy.stats import norm
 from numpy import sqrt as np_sqrt
+from pickle import dump as pickle_dump
 
 
 def heckman_wage_model(
-    df, selection_col, outcome_col, select_exog, outcome_exog, add_intercept=True
+    df,
+    selection_col=None,
+    outcome_col=None,
+    select_exog=None,
+    outcome_exog=None,
+    add_intercept=True,
 ):
     """
     Performs Heckman's Two-Step correction for selection bias.
@@ -50,6 +56,10 @@ def heckman_wage_model(
 
     # Fit Probit
     probit_model = sm.Probit(y_select, X_select).fit(disp=0)
+    # print("--- Checking Education None ---")
+    # import pandas as pd
+
+    # print(pd.crosstab(df["education_level_None"], df["employed"]))
 
     # Calculate Inverse Mills Ratio (Lambda)
     # Get the predicted Z-scores (index)
@@ -73,23 +83,27 @@ def heckman_wage_model(
 
     # Fit OLS
     ols_model = sm.OLS(y_outcome, X_outcome).fit()
+    # print(ols_model.summary())
 
     # --- Step 3: derive Rho and Sigma (Optional diagnostics) ---
     # The coefficient on IMR is (rho * sigma_u)
-    beta_lambda = ols_model.params["imr"]
+    # beta_lambda = ols_model.params["imr"]
 
     # Estimated residual variance from the OLS step
     # Note: This is slightly biased in the two-step method but provides an approximation
-    sigma_e_sq = ols_model.mse_resid
-    sigma_u = np_sqrt(
-        sigma_e_sq + beta_lambda**2 * data_selected["imr"].var()
-    )  # Approximation
-    rho = beta_lambda / sigma_u
+    # sigma_e_sq = ols_model.mse_resid
+    # sigma_u = np_sqrt(
+    #     sigma_e_sq + beta_lambda**2 * data_selected["imr"].var()
+    # )  # Approximation
+    # rho = beta_lambda / sigma_u
+
+    # X_outcome_all = data[outcome_exog + ["imr"]]
+    # X_outcome_all = sm.add_constant(X_outcome_all, has_constant="add")
+    # data["latent_market_income"] = ols_model.predict(X_outcome_all)
 
     return {
-        "probit_model": probit_model,
-        "ols_model": ols_model,
-        "data_with_imr": data[["imr"]],  # Returns IMR for the whole dataset
-        "lambda_param": beta_lambda,
-        "rho_approx": rho,
+        "selection": probit_model,
+        "outcome": ols_model,
+        "data": data,
+        "outcome_exog": outcome_exog,
     }

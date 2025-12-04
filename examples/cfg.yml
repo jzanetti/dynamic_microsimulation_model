@@ -6,6 +6,10 @@ output_dirs:
   figures: "outputs/figures"
   outputs: "outputs/outputs"
 
+cat_cols:
+  - "gender"
+  - "education_level"
+
 models:
   mortality:
     type: "linear"
@@ -13,3 +17,13 @@ models:
       - "age"
       - "ethnicity"
     target: "deaths"
+
+behaviour_model:
+  employment:
+    predictors:
+      selection:
+        - "age"
+        - "gender"
+      outcome:
+        - "age"
+        - "education_level"

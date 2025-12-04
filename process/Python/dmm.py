@@ -1,6 +1,7 @@
 from logging import getLogger
 from process.Python.aging import forward as aging_forward
 from process.Python.mortality import forward as mortality_forward
+from process.Python.employment import forward as employment_forward
 from os.path import exists
 from os import makedirs
 from pandas import concat
@@ -27,7 +28,7 @@ def run_dmm(population_data: dict, cfg: dict, start_year: int, years: int = 5):
 
         proc_pop = aging_forward(start_pop, proc_year, cfg)
         proc_pop = mortality_forward(proc_pop, cfg)
-        # fertility forward (TBA)
+        proc_pop = employment_forward(proc_pop, cfg)
 
         results.append(proc_pop)
 

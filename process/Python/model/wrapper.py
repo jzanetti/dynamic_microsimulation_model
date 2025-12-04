@@ -6,8 +6,73 @@ from pickle import dump as pickle_dump
 
 from process.Python.data.utils import aggregate_population
 from process.Python.model.linear import linear_model
+from process.Python.model.utils import preprocess_data
+from process.Python.model.heckman_wage import heckman_wage_model
 
 logger = getLogger()
+
+
+def run_heckman_wage_model(
+    pop_data: DataFrame,
+    cfg: dict,
+    heckman_age_groups: list = ["0-18", "18-65", "65-999"],
+) -> DataFrame:
+
+    employment_cfg = cfg["behaviour_model"]["employment"]
+
+    cal_cols = list(
+        set(cfg["cat_cols"])
+        & set(
+            employment_cfg["predictors"]["selection"]
+            + employment_cfg["predictors"]["outcome"]
+        )
+    )
+
+    logger.info(
+        f"Identified categoriec features are {cal_cols}, and start one-shot preprocessing ...",
+    )
+    pop_data_input, cal_cols_map = preprocess_data(
+        pop_data, cal_cols, reference_groups=None
+    )
+
+    heckman_model_predictors = {"selection": [], "outcome": []}
+    for proc_pred_type in heckman_model_predictors:
+        for proc_var in employment_cfg["predictors"][proc_pred_type]:
+            if proc_var in cal_cols:
+                heckman_model_predictors[proc_pred_type].extend(cal_cols_map[proc_var])
+            else:
+                heckman_model_predictors[proc_pred_type].append(proc_var)
+
+    logger.info(
+        f"Due to different wage behaviours, the heckman model run over different age groups {heckman_age_groups}",
+    )
+
+    for proc_ages in heckman_age_groups:
+
+        logger.info(f"Heckman model for {proc_ages}")
+
+        model_outputpath = (
+            f"{cfg["output_dirs"]["models"]}/model_heckman_wage_{proc_ages}.pkl"
+        )
+
+        proc_ages = proc_ages.split("-")
+
+        proc_data_input = pop_data_input[
+            (pop_data_input["age"] >= int(proc_ages[0]))
+            & (pop_data_input["age"] < int(proc_ages[1]))
+        ]
+        results = heckman_wage_model(
+            proc_data_input,
+            selection_col="employed",
+            outcome_col="market_income",
+            select_exog=heckman_model_predictors["selection"],
+            outcome_exog=heckman_model_predictors["outcome"],
+        )
+
+        pickle_dump(
+            results,
+            open(model_outputpath, "wb"),
+        )
 
 
 def run_model(

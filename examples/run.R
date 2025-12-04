@@ -5,10 +5,13 @@ source("process/R/data/input.R", local = data_input_env)
 source("process/R/data/output.R", local = data_output_env)
 source("process/R/model/wrapper.R", local = model_wrapper_env)
 source("process/R/model/linear.R", local = model_linear_env)
+source("process/R/model/heckman_wage.R", local = model_heckman_wage_env)
 source("process/R/vis.R", local = vis_env)
 source("process/R/dmm.R", local = dmm_env)
 source("process/R/person.R", local = person_env)
 source("process/R/mortality.R", local = mortality_env)
+source("process/R/employment.R", local = employment_env)
+source("process/R/model/utils.R", local = model_utils_env)
 
 # ---------------------------
 # Load configuration file
@@ -42,7 +45,7 @@ vis_env$plot_inputs(
 # Create necessary models
 # ---------------------------
 for (proc_model_name in c("mortality")) {
-  model_wrapper_env$run_rate_model(
+  model_wrapper_env$run_model(
     sample_pop,
     proc_model_name,
     cfg[["models"]][[proc_model_name]],
