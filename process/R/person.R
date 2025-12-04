@@ -19,10 +19,5 @@ forward <- function(pop,
   # <><><><><><><><><><><><><><><><>
   pop$age <- pop$age + year_diff
   
-  # <><><><><><><><><><><><><><><><>
-  # Calculate mortality
-  # <><><><><><><><><><><><><><><><>
-  pop <- mortality_env$run_mortality(pop, id_col_name = id_col_name, cfg = cfg)
-  
   return(pop)
 }

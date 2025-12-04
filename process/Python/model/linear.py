@@ -10,11 +10,25 @@ from numpy import nan
 from sklearn.linear_model import LinearRegression
 
 
-def fit_aggregated_rate_model(
-    df: DataFrame, target_col, predictor_cols, population_col
+def linear_model(
+    df: DataFrame,
+    target_col,
+    predictor_cols,
+    population_col: None = None,
+    use_rate: bool = False,
 ):
     """
     Fits a Regression model for aggregated count data.
+    For example, Obtain mortality probabilities, the input is sth like:
+        age_group ethnicity_group  deaths  base_year  count
+    0        0-9           Asian       0       2025    165
+    1      10-19           Asian       0       2025    141
+    2      20-29           Asian       2       2025    119
+    3      30-39           Asian      19       2025    260
+    4      40-49           Asian      75       2025    240
+    5      50-59           Asian      60       2025     85
+    the function will predict the death rate (e.g., deaths/count) based on
+    selected predictors
 
     Args:
         df (pd.DataFrame): The training data.
@@ -26,9 +40,14 @@ def fit_aggregated_rate_model(
         model: A trained Pipeline.
     """
 
-    # 1. Prepare Target (y) and Weights
-    y = df[target_col] / df[population_col]
-    y = y.replace(nan, 1.0)
+    if use_rate:
+        if population_col is None:
+            raise Exception("Use rate is enabled, but population col is set to None")
+        y = df[target_col] / df[population_col]
+        y = y.replace(nan, 1.0)
+    else:
+        y = df[target_col]
+
     X = df[predictor_cols]
 
     # 2. Identify Column Types
@@ -79,19 +98,3 @@ def fit_aggregated_rate_model(
     # model_pipeline.predict(new_data_df)
 
     return model_pipeline
-
-
-def predict_expected_deaths(model, new_data_df, population_col_name=None):
-    """
-    Predicts the death RATE.
-    If a population column is provided, it calculates expected DEATH COUNTS.
-    """
-    # 1. Predict the Rate (Probability of death)
-    predicted_rate = model.predict(new_data_df)
-
-    # 2. If we know the population of the new data, calculate Counts
-    if population_col_name and population_col_name in new_data_df.columns:
-        return predicted_rate * new_data_df[population_col_name]
-
-    # Otherwise just return the probability/rate (0 to 1)
-    return predicted_rate

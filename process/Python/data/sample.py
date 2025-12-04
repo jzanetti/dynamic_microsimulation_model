@@ -4,10 +4,10 @@ from pandas import DataFrame, qcut, cut, Series
 from scipy.stats import norm as scipy_norm
 from copy import deepcopy
 from pyarrow.parquet import write_table as pq_write_table
-from os.path import exists
+from os.path import exists, join
 from os import makedirs
 import pyarrow as pa
-
+from pyarrow.parquet import read_table as pq_read_table
 
 SAMPLE_DATA_DIR = "etc/sample/"
 SAMPLE_DATA_CFG = {
@@ -101,10 +101,19 @@ def simulation_sample_mortality(
     return mortality_data.rename(columns={"ethnicity": "ethnicity_group"})
 
 
-def add_sample_population_status(pop: DataFrame) -> DataFrame:
-    pop["life_stage"] = "alive"
+def generate_sample_supplements(required_data_types: list = ["mortality"]):
 
-    return pop
+    proc_data_path = join(SAMPLE_DATA_DIR, f"pop_data.parquet")
+    pop_data = pq_read_table(proc_data_path)
+    pop_data = pop_data.to_pandas()
+
+    if "mortality" in required_data_types:
+        mortality_data = simulation_sample_mortality(pop_data)
+        mortality_data_path = f"{SAMPLE_DATA_DIR}/mortality_data.parquet"
+
+        if not exists(SAMPLE_DATA_DIR):
+            makedirs(SAMPLE_DATA_DIR)
+        pq_write_table(pa.Table.from_pandas(mortality_data), mortality_data_path)
 
 
 def generate_sample_population(
@@ -243,17 +252,6 @@ def generate_sample_population(
         ["Low", "Medium", "High"], size=mask_edu.sum(), p=[0.35, 0.40, 0.25]
     )
 
-    # Employment (Only 18-64)
-    # df["employment_status"] = "Not in Labor Force"
-    # df["labour_income"] = 0.0
-    # mask_work = (df["age"] >= 18) & (df["age"] < 65)
-
-    # if mask_work.any():
-    #    df.loc[mask_work, "employment_status"] = choice(
-    #        ["Employed", "Unemployed"], size=mask_work.sum(), p=[0.95, 0.05]
-    #    )
-
-    # Wages
     base_wage = lognormal(mean=10.6, sigma=0.5, size=n)
     educ_map = {"None": 0, "Low": 0.85, "Medium": 1.0, "High": 1.35}
     df["market_income"] = base_wage * df["education_level"].map(educ_map)
@@ -313,15 +311,10 @@ def generate_sample_population(
     remaining = [c for c in df.columns if c not in cols]
 
     pop_data = df[cols + remaining]
-    pop_data = add_sample_population_status(pop_data)
-    mortality_data = simulation_sample_mortality(pop_data)
-
     # Write output to parquet
     pop_data_path = f"{SAMPLE_DATA_DIR}/pop_data.parquet"
-    mortality_data_path = f"{SAMPLE_DATA_DIR}/mortality_data.parquet"
 
     if not exists(SAMPLE_DATA_DIR):
         makedirs(SAMPLE_DATA_DIR)
 
     pq_write_table(pa.Table.from_pandas(pop_data), pop_data_path)
-    pq_write_table(pa.Table.from_pandas(mortality_data), mortality_data_path)

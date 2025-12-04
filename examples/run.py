@@ -1,9 +1,12 @@
-from process.Python.data.sample import generate_sample_population
+from process.Python.data.sample import (
+    generate_sample_population,
+    generate_sample_supplements,
+)
 from process.Python.data.input import create_inputs
 from process.Python.data.output import create_outputs
 from process.Python.vis import plot_inputs, plot_outputs
 from yaml import safe_load as yaml_safe_load
-from process.Python.model.wrapper import run_rate_model
+from process.Python.model.wrapper import run_model
 from process.Python.dmm import run_dmm
 
 
@@ -16,6 +19,7 @@ cfg = yaml_safe_load(open("examples/cfg.yml"))
 # Create a sample population data
 # ---------------------------
 generate_sample_population(n=10000)
+generate_sample_supplements(required_data_types=["mortality"])
 
 # ---------------------------
 # Create input data for DMM
@@ -40,7 +44,7 @@ plot_inputs(
 # Create necessary models
 # ---------------------------
 for proc_model_name in ["mortality"]:
-    run_rate_model(
+    run_model(
         sample_pop,
         proc_model_name,
         cfg=cfg["models"][proc_model_name],

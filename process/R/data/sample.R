@@ -18,6 +18,11 @@ SAMPLE_DATA_CFG <- list(
 )
 SAMPLE_DATA_DIR = "etc/sample/"
 
+# Helper function to mimic numpy.clip
+clip_val <- function(x, lower, upper) {
+  pmax(lower, pmin(x, upper))
+}
+
 simulation_sample_mortality <- function(pop_input, 
                                         b0 = -4.5, 
                                         b_age = 0.095, 
@@ -75,14 +80,16 @@ simulation_sample_mortality <- function(pop_input,
   return(mortality_agg)
 }
 
-add_sample_population_status <- function(pop) {
-  pop[, life_stage := "alive"]
-  return(pop)
-}
 
-# Helper function to mimic numpy.clip
-clip_val <- function(x, lower, upper) {
-  pmax(lower, pmin(x, upper))
+generate_sample_supplements <- function(required_data_types = c("mortality")) {
+  
+  proc_data_path <- paste0(SAMPLE_DATA_DIR, "/pop_data.parquet")
+  pop_data <- read_parquet(proc_data_path)
+  pop_data <- as.data.table(pop_data)
+  if ("mortality" %in% required_data_types) {
+    mortality_data = simulation_sample_mortality(pop_data)
+    write_parquet(as.data.frame(mortality_data), paste0(SAMPLE_DATA_DIR, "/mortality_data.parquet"))
+  }
 }
 
 generate_sample_population <- function(n = 1000, seed_num = 42, hh_configs = SAMPLE_DATA_CFG) {
@@ -301,11 +308,11 @@ generate_sample_population <- function(n = 1000, seed_num = 42, hh_configs = SAM
   remaining <- setdiff(names(df), cols)
   
   pop_data <- as.data.table(df[, c(cols, remaining)])
-  pop_data <- add_sample_population_status(pop_data)
-  mortality_data <- simulation_sample_mortality(pop_data)
+  # pop_data <- add_sample_population_status(pop_data)
+  # mortality_data <- simulation_sample_mortality(pop_data)
  
   dir.create(SAMPLE_DATA_DIR, showWarnings = FALSE)
   
   write_parquet(as.data.frame(pop_data), paste0(SAMPLE_DATA_DIR, "/pop_data.parquet"))
-  write_parquet(as.data.frame(mortality_data), paste0(SAMPLE_DATA_DIR, "/mortality_data.parquet"))
+  # write_parquet(as.data.frame(mortality_data), paste0(SAMPLE_DATA_DIR, "/mortality_data.parquet"))
 }

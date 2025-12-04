@@ -5,6 +5,11 @@ from pandas import DataFrame
 from numpy import isnan
 
 
+def forward(pop: DataFrame, cfg: dict, id_col_name: str = "id"):
+    pop = run_mortality(pop, id_col_name=id_col_name, cfg=cfg)
+    return pop
+
+
 def run_mortality(pop: DataFrame, id_col_name: str, cfg: dict):
     mortality_model_path = join(cfg["output_dirs"]["models"], "model_mortality.pkl")
     mortality_model = pickle_load(open(mortality_model_path, "rb"))

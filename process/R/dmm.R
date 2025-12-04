@@ -14,6 +14,9 @@ run_dmm <- function(population_data, cfg, start_year, years = 5) {
     print(paste0("Processing Year: ", proc_year))
 
     proc_pop <- person_env$forward(start_pop, proc_year, cfg)
+    proc_pop <- mortality_env$forward(proc_pop, cfg)
+    # fertility forward (TBA)
+    
     
     results[[results_index]] <- proc_pop
     

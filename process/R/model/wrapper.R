@@ -46,11 +46,12 @@ run_rate_model <- function(
   )
   
   # 5. Obtain Probabilities (Fit Model)
-  model_fit <- model_linear_env$fit_aggregated_rate_model(
+  model_fit <- model_linear_env$linear_model(
     df = data_to_use,
     target_col = cfg[["target"]],
     predictor_cols = predictors_new,
-    population_col = "count"
+    population_col = "count",
+    use_rate = TRUE
   )
   
   # 6. Structure the Output Object

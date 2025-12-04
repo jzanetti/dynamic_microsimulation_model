@@ -1,6 +1,12 @@
 library(dplyr)
 library(purrr) # For map functions if needed, though basic loops work too
 
+forward <- function(pop, cfg, id_col_name = "id") {
+  pop <- run_mortality(pop, id_col_name = id_col_name, cfg = cfg)
+  return (pop)
+}
+
+
 run_mortality <- function(pop, id_col_name, cfg) {
   
   # 1. Construct Path

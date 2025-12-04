@@ -5,12 +5,12 @@ from os.path import exists, join
 from pickle import dump as pickle_dump
 
 from process.Python.data.utils import aggregate_population
-from process.Python.model.linear import fit_aggregated_rate_model
+from process.Python.model.linear import linear_model
 
 logger = getLogger()
 
 
-def run_rate_model(
+def run_model(
     pop_data: dict, target_data_name: str, cfg: dict, output_dir: str
 ) -> DataFrame:
     pop = pop_data["pop"]
@@ -36,8 +36,12 @@ def run_rate_model(
     data_to_use = merge(target_data, pop_to_use, on=predictors_new, how="left")
 
     # Obtain mortality probabilities
-    model = fit_aggregated_rate_model(
-        data_to_use, cfg["target"], predictors_new, "count"
+    model = linear_model(
+        data_to_use,
+        cfg["target"],
+        predictors_new,
+        population_col="count",
+        use_rate=True,
     )
 
     model = {"model": model, "predictors": predictors_new, "trained_data": data_to_use}

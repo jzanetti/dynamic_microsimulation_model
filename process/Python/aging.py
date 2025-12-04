@@ -16,14 +16,6 @@ def forward(
 
     pop["year"] = forward_year
 
-    # <><><><><><><><><><><><><><><><>
-    # Calculate mortality
-    # <><><><><><><><><><><><><><><><>
     pop["age"] = pop["age"] + year_diff
-
-    # <><><><><><><><><><><><><><><><>
-    # Calculate mortality
-    # <><><><><><><><><><><><><><><><>
-    pop = run_mortality(pop, id_col_name=id_col_name, cfg=cfg)
 
     return pop

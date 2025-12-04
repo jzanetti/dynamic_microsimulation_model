@@ -19,6 +19,7 @@ cfg <- read_yaml("examples/cfg.yml")
 # Create a sample population data
 # ---------------------------
 data_sample_env$generate_sample_population(n=10000)
+data_sample_env$generate_sample_supplements(required_data_types=c("mortality"))
 
 # ---------------------------
 # Create input data for DMM
