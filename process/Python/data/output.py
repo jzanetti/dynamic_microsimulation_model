@@ -19,4 +19,18 @@ def create_outputs(data_dir: str):
         .reset_index(name="count")
     )
 
-    return {"population": {"pop": pop_stats, "hhd": hhd_stats}}
+    # <><><><><><><><><><><><><><><><><><><><>
+    # 2. Produce employment status
+    # <><><><><><><><><><><><><><><><><><><><>
+    employment_stats = {}
+    for proc_key in ["market_income", "latent_market_income"]:
+        employment_stats[f"mean_{proc_key}"] = (
+            data[(data["life_stage"] == "alive")]
+            .groupby("year")[proc_key]
+            .mean()
+            .reset_index(name=f"mean_{proc_key}")
+        )
+    return {
+        "population": {"pop": pop_stats, "hhd": hhd_stats},
+        "employment": {"income": employment_stats},
+    }

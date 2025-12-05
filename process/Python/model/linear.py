@@ -89,11 +89,11 @@ def linear_model(
     model_pipeline.fit(X, y)
 
     # new_data_df = DataFrame(
-    #    {
-    #        "age_group": ["50-59", "50-59"],
-    #        "ethnicity_group": ["Asian", "Maori"],
-    #    }
-    # )
+    #     {
+    #         "age_group": ["50-59", "50-59"],
+    #         "ethnicity_group": ["Asian", "Maori"],
+    #     }
+    #  )
 
     # model_pipeline.predict(new_data_df)
 

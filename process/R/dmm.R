@@ -12,13 +12,17 @@ run_dmm <- function(population_data, cfg, start_year, years = 5) {
   
   for (proc_year in start_year:end_year) {
     print(paste0("Processing Year: ", proc_year))
-
+    
     proc_pop <- person_env$forward(start_pop, proc_year, cfg)
     proc_pop <- mortality_env$forward(proc_pop, cfg)
     # fertility forward (TBA)
     proc_pop = employment_env$forward(proc_pop, cfg)
     
-    
+    print(paste0(
+      proc_year, ": ", 
+      mean(proc_pop$latent_market_income), 
+      "/", 
+      nrow(proc_pop[proc_pop$life_stage == "dead",])))
     results[[results_index]] <- proc_pop
     
     results_index <- results_index + 1

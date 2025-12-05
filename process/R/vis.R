@@ -33,11 +33,6 @@ plot_outputs <- function(output_results, output_dir = "") {
   # --- 2. Plot Household Status (hhd_stats) ---
   hhd_stats <- output_results$population$hhd
   
-  # Ensure 'year' is treated as a continuous variable
-  hhd_stats <- hhd_stats %>%
-    mutate(year = as.integer(year))
-  
-  # Python: Single line plot
   hhd_plot <- hhd_stats %>%
     mutate(year = as.integer(year)) %>%
     ggplot(aes(x = year, y = count)) +
@@ -58,6 +53,31 @@ plot_outputs <- function(output_results, output_dir = "") {
     width = 10,
     height = 6
   )
+  
+  # --- 3. Plot Employment income ---
+  income_data <- output_results[["employment"]][["income"]]
+
+  income_data <- income_data %>%
+    pivot_longer(
+      cols = -year,               # Select all columns EXCEPT year
+      names_to = "metric",        # New column for the names (e.g., "mean_market_income")
+      values_to = "value"         # New column for the numbers
+    )
+  
+  income_plot <- ggplot(income_data, aes(x = year, y = value, color = metric)) +
+    geom_line(linewidth = 1) + 
+    geom_point() +                # Optional: adds dots to the lines
+    scale_x_continuous(breaks = function(x) seq(ceiling(min(x)), floor(max(x)), by = 1)) +
+    labs(title = "Income Statistics", y = "Income", x = "Year") +
+    theme_minimal()
+  
+  ggsave(
+    filename = file.path(output_dir, "employment_income.png"),
+    plot = income_plot,
+    width = 10,
+    height = 6
+  )
+  
 }
 
 

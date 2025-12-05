@@ -46,6 +46,15 @@ EMP_PARAMS <- list(
   )
 )
 
+WORKING_HRS <- data.frame(
+  age_group = c("15-24", "15-24", "25-34", "25-34", "35-44", "35-44", 
+                "45-54", "45-54", "55-64", "55-64", "65+", "65+"),
+  gender    = c("Male", "Female", "Male", "Female", "Male", "Female", 
+                "Male", "Female", "Male", "Female", "Male", "Female"),
+  hours_mean = c(27.5, 23.5, 41.0, 35.0, 42.0, 29.5, 
+                 41.0, 34.0, 39.0, 33.0, 26.0, 22.0)
+)
+
 simulation_sample_mortality <- function(pop_input,
                                         b0 = -4.5,
                                         b_age = 0.095,
@@ -401,9 +410,9 @@ generate_sample_population <- function(n = 1000, seed_num = 42, hh_configs = SAM
   df <- obtain_employment_status(df, EMP_PARAMS)
   df <- obtain_market_income(df)
   df <- obtain_benefit_income(df)
+  df <- obtain_working_hours(df)
   
   # --- 4. Final Data Cleanup ---
-  
   # HH Stats aggregation
   hh_stats <- df %>%
     group_by(household_id) %>%
@@ -446,4 +455,33 @@ generate_sample_population <- function(n = 1000, seed_num = 42, hh_configs = SAM
   write_parquet(df[, cols], pop_data_path)
   
   return(df)
+}
+
+
+obtain_working_hours <- function(df) {
+  # Assumes WORKING_HRS is already a dataframe in your global environment
+  df_hours <- WORKING_HRS
+  
+  # 1. Get ordered labels from the unique values in the lookup table
+  age_order <- unique(df_hours$age_group)
+  
+  # 2. Define bins (14 to ensure 15 is included, 999 as catch-all)
+  # R's cut() includes the rightmost value by default, just like pandas
+  bins <- c(14, 24, 34, 44, 54, 64, 999)
+  
+  # 3. Pipeline: Binning -> Joining -> Assigning
+  pop_merged <- df %>%
+    mutate(
+      # cut() creates a factor (Categorical) automatically
+      age_group = cut(age, breaks = bins, labels = age_order)
+    ) %>%
+    # Left join is equivalent to merge(..., how='left')
+    left_join(df_hours, by = c("age_group", "gender")) %>%
+    mutate(
+      working_hours = hours_mean
+    )
+  
+  pop_merged$hours_mean <- NULL
+  
+  return(pop_merged)
 }

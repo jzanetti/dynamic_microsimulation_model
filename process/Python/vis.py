@@ -1,4 +1,4 @@
-from matplotlib.pyplot import subplots, plot, legend, title, savefig, close, gca
+from matplotlib.pyplot import subplots, plot, legend, title, savefig, close, gca, grid
 from matplotlib.ticker import MaxNLocator
 import base64
 from io import BytesIO
@@ -25,6 +25,7 @@ def plot_outputs(output_results: DataFrame, output_dir: str = ""):
         proc_data[proc_data["life_stage"] == "dead"]["count"],
         label="dead",
     )
+    grid()
     legend()
     ax = gca()
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
@@ -36,10 +37,24 @@ def plot_outputs(output_results: DataFrame, output_dir: str = ""):
     subplots(figsize=(10, 6))
     proc_data = output_results["population"]["hhd"]
     plot(proc_data["year"], proc_data["count"])
+    grid()
     ax = gca()
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     title("Number of household")
     savefig(join(output_dir, "results_hhd_stats.png"))
+    close()
+
+    # Plot employment status
+    subplots(figsize=(10, 6))
+    proc_data = output_results["employment"]["income"]
+    for proc_key in ["mean_market_income", "mean_latent_market_income"]:
+        plot(proc_data[proc_key]["year"], proc_data[proc_key][proc_key], label=proc_key)
+    ax = gca()
+    grid()
+    legend()
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    title("Income Statistics")
+    savefig(join(output_dir, "employment_income.png"))
     close()
 
 

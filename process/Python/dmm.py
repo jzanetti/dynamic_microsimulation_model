@@ -30,6 +30,9 @@ def run_dmm(population_data: dict, cfg: dict, start_year: int, years: int = 5):
         proc_pop = mortality_forward(proc_pop, cfg)
         proc_pop = employment_forward(proc_pop, cfg)
 
+        print(
+            f"{proc_year}: {proc_pop["latent_market_income"].mean()}/{len(proc_pop[proc_pop["life_stage"] == "dead"])}"
+        )
         results.append(proc_pop)
 
         start_pop = deepcopy(proc_pop)

@@ -23,9 +23,6 @@ heckman_wage_model <- function(df,
     as.data.frame() # Ensure it's a standard dataframe for modeling
   
   # --- Step 1: Selection Equation (Probit) ---
-  # Python: y_select = data[selection_col]
-  # Python: X_select = data[select_exog]
-  
   # Construct formula for GLM
   # Equivalent to sm.add_constant, R adds intercept by default (y ~ x). 
   # If add_intercept is FALSE, we use (y ~ x - 1).
@@ -52,7 +49,6 @@ heckman_wage_model <- function(df,
   # --- Step 2: Outcome Equation (OLS) ---
   # Filter for selected observations (e.g., where participation == 1)
   # We must also ensure the outcome_col is not NaN
-  # Python: data_selected = data[(data[selection_col] == 1) & (data[outcome_col].notna())].copy()
   data_selected <- data[data[[selection_col]] == 1 & !is.na(data[[outcome_col]]), ]
   
   # Python: y_outcome = data_selected[outcome_col]
@@ -69,7 +65,6 @@ heckman_wage_model <- function(df,
   outcome_formula <- as.formula(outcome_formula_str)
   
   # Fit OLS
-  # Python: ols_model = sm.OLS(y_outcome, X_outcome).fit()
   ols_model <- lm(outcome_formula, data = data_selected)
   
   # --- Step 3: derive Rho and Sigma (Optional diagnostics) ---

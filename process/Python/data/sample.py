@@ -1,6 +1,6 @@
 from numpy import array, arange, clip, nan, sum
 from numpy.random import binomial, choice, lognormal, normal, randint, seed, random
-from pandas import DataFrame, qcut, cut, Series
+from pandas import DataFrame, qcut, cut, Series, Categorical, merge
 from scipy.stats import norm as scipy_norm
 from copy import deepcopy
 from pyarrow.parquet import write_table as pq_write_table
@@ -9,6 +9,7 @@ from os import makedirs
 import pyarrow as pa
 from pyarrow.parquet import read_table as pq_read_table
 from numpy import maximum, where, select
+from numpy.random import normal
 
 SAMPLE_DATA_DIR = "etc/sample/"
 SAMPLE_DATA_CFG = {
@@ -64,6 +65,21 @@ EMP_PARAMS = {
         "University": 1.2,  # Boost
     },
 }
+
+WORKING_HRS = [
+    {"age_group": "15-24", "gender": "Male", "hours_mean": 27.5},
+    {"age_group": "15-24", "gender": "Female", "hours_mean": 23.5},
+    {"age_group": "25-34", "gender": "Male", "hours_mean": 41.0},
+    {"age_group": "25-34", "gender": "Female", "hours_mean": 35.0},
+    {"age_group": "35-44", "gender": "Male", "hours_mean": 42.0},
+    {"age_group": "35-44", "gender": "Female", "hours_mean": 29.5},
+    {"age_group": "45-54", "gender": "Male", "hours_mean": 41.0},
+    {"age_group": "45-54", "gender": "Female", "hours_mean": 34.0},
+    {"age_group": "55-64", "gender": "Male", "hours_mean": 39.0},
+    {"age_group": "55-64", "gender": "Female", "hours_mean": 33.0},
+    {"age_group": "65+", "gender": "Male", "hours_mean": 26.0},
+    {"age_group": "65+", "gender": "Female", "hours_mean": 22.0},
+]
 
 
 def simulation_sample_mortality(
@@ -355,6 +371,7 @@ def generate_sample_population(
     df = obtain_employment_status(df, EMP_PARAMS)
     df = obtain_market_income(df)
     df = obtain_benefit_income(df)
+    df = obtain_working_hours(df)
 
     # --- 4. Final Data Cleanup ---
     hh_stats = (
@@ -399,3 +416,25 @@ def generate_sample_population(
     pq_write_table(pa.Table.from_pandas(df[cols]), pop_data_path)
 
     return df
+
+
+def obtain_working_hours(df: DataFrame):
+    df_hours = DataFrame(WORKING_HRS)
+
+    # Optional: Set categorical order for age_group to ensure correct plotting
+    age_order = list(df_hours.age_group.unique())
+    df_hours["age_group"] = Categorical(
+        df_hours["age_group"], categories=age_order, ordered=True
+    )
+
+    bins = [14, 24, 34, 44, 54, 64, 999]  # 150 is catch-all for old age
+    # labels = ["15-24", "25-34", "35-44", "45-54", "55-64", "65+"]
+
+    df["age_group"] = cut(df["age"], bins=bins, labels=age_order)
+
+    pop_merged = merge(df, df_hours, on=["age_group", "gender"], how="left")
+
+    # Method A: Simple Average (Deterministic)
+    pop_merged["working_hours"] = pop_merged["hours_mean"]
+
+    return pop_merged

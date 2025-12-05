@@ -14,7 +14,6 @@ run_heckman_model <- function(pop_data, cfg, heckman_age_groups = c("0-18", "18-
 }
 
 
-
 run_heckman_wage_model_prediction <- function(pop_data, cfg, heckman_age_groups) {
 
   all_data <- list()

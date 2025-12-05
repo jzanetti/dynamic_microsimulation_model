@@ -82,8 +82,8 @@ run_heckman_wage_model <- function(pop_data,
     )
     
     saveRDS(
-      list(selection = model_results$probit_model, 
-           outcome = model_results$ols_model, 
+      list(selection = model_results$selection, 
+           outcome = model_results$outcome, 
            data = model_results$data),
       file = model_outputpath
     )

@@ -21,11 +21,23 @@ create_outputs <- function(data_dir) {
     # Count the number of unique household IDs (groupby("year")["household_id"].count())
     summarise(count = n(), .groups = "drop")
   
+  
+  # <><><><><><><><><><><><><><><><><><><><>
+  # 2. Produce employment status
+  # <><><><><><><><><><><><><><><><><><><><>
+  latent_market_income_stats <- data %>%
+    filter(life_stage == "alive") %>%
+    group_by(year) %>%
+    summarise(
+      mean_market_income = mean(market_income, na.rm = TRUE),
+      mean_latent_market_income = mean(latent_market_income, na.rm = TRUE))
+  
   # The return structure in R is typically a named list
   return(list(
     population = list(
       pop = pop_stats,
       hhd = hhd_stats
-    )
+    ),
+    employment = list(income = latent_market_income_stats)
   ))
 }
