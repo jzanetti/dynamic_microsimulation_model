@@ -1,8 +1,6 @@
 # Dynamic Microsimulation Model (DMM) - Core
 
-This is the core model for the Dynamic Microsimulation Model (DMM). The model is available in both `Python` and `R`.
-
-The model is created based on the paper [Bronka et al.](https://www.microsimulation.pub/articles/00318)
+This is the core model for the Dynamic Microsimulation Model (DMM). The model is available in both `Python` and `R`. The model is created based on the paper [Bronka et al.](https://www.microsimulation.pub/articles/00318)
 
 ## How to install the package
 
