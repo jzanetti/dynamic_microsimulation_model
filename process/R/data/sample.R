@@ -441,7 +441,8 @@ generate_sample_population <- function(n = 1000, seed_num = 42, hh_configs = SAM
     "benefit_income",
     "n_adults",
     "n_seniors",
-    "n_children"
+    "n_children",
+    "working_hours"
   )
   
   # Write output

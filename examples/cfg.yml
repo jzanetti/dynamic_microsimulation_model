@@ -27,3 +27,8 @@ behaviour_model:
       outcome:
         - "age"
         - "education_level"
+    total_hrs: 80
+    possible_working_hrs:
+      - 0
+      - 20
+      - 40

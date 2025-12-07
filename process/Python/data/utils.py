@@ -4,6 +4,8 @@ from re import search as re_search
 from pandas import cut as pd_cut
 from numpy import round
 from numpy.random import shuffle
+from numpy import abs as np_abs
+from numpy.random import normal as np_normal
 
 
 # --- Helper: Check if labels look like ranges ---

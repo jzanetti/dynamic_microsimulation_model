@@ -1,4 +1,15 @@
-from matplotlib.pyplot import subplots, plot, legend, title, savefig, close, gca, grid
+from matplotlib.pyplot import (
+    subplots,
+    plot,
+    legend,
+    title,
+    savefig,
+    close,
+    gca,
+    grid,
+    xlabel,
+    ylabel,
+)
 from matplotlib.ticker import MaxNLocator
 import base64
 from io import BytesIO
@@ -8,6 +19,33 @@ from os.path import exists
 from os import makedirs
 from pandas import DataFrame
 from os.path import join
+
+
+def plot_intermediate(data_to_plot, data_name: str, output_dir: str = "/tmp"):
+
+    if data_name == "utility_func":
+        output_path = join(output_dir, "utility_employment_rate.png")
+        subplots(figsize=(10, 6))
+        plot(data_to_plot["scaler"], data_to_plot["full_time"], label="full_time")
+        plot(data_to_plot["scaler"], data_to_plot["part_time"], label="part_time")
+        legend()
+        title("Employment behaviours with Random Utility Function")
+        xlabel("Income Scaler")
+        ylabel("Employment rate")
+        savefig(output_path, bbox_inches="tight")
+        close()
+
+        output_path = join(output_dir, "utility_employment_hrs.png")
+        subplots(figsize=(10, 6))
+        plot(data_to_plot["scaler"], data_to_plot["total_employment_hrs"])
+        legend()
+        title(
+            "Employment behaviours with Random Utility Function \n Total employment hours"
+        )
+        xlabel("Income Scaler")
+        ylabel("Employment hours")
+        savefig(output_path, bbox_inches="tight")
+        close()
 
 
 def plot_outputs(output_results: DataFrame, output_dir: str = ""):
@@ -30,7 +68,7 @@ def plot_outputs(output_results: DataFrame, output_dir: str = ""):
     ax = gca()
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     title("Number of people: Alive/Dead")
-    savefig(join(output_dir, "results_pop_stats.png"))
+    savefig(join(output_dir, "results_pop_stats.png"), bbox_inches="tight")
     close()
 
     # Plot household status
@@ -41,20 +79,23 @@ def plot_outputs(output_results: DataFrame, output_dir: str = ""):
     ax = gca()
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     title("Number of household")
-    savefig(join(output_dir, "results_hhd_stats.png"))
+    savefig(join(output_dir, "results_hhd_stats.png"), bbox_inches="tight")
     close()
 
     # Plot employment status
     subplots(figsize=(10, 6))
     proc_data = output_results["employment"]["income"]
-    for proc_key in ["mean_market_income", "mean_latent_market_income"]:
+    for proc_key in [
+        "mean_market_income_per_week",
+        "mean_latent_market_income_per_week",
+    ]:
         plot(proc_data[proc_key]["year"], proc_data[proc_key][proc_key], label=proc_key)
     ax = gca()
     grid()
     legend()
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-    title("Income Statistics")
-    savefig(join(output_dir, "employment_income.png"))
+    title("Income Statistics (Per Week)")
+    savefig(join(output_dir, "employment_income.png"), bbox_inches="tight")
     close()
 
 

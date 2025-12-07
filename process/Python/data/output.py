@@ -2,7 +2,7 @@ from os.path import join
 from pyarrow.parquet import read_table as pq_read_table
 
 
-def create_outputs(data_dir: str):
+def create_outputs(data_dir: str, model_dir: str):
     data_path = join(data_dir, "results.parquet")
     data = pq_read_table(data_path)
     data = data.to_pandas()
@@ -23,13 +23,14 @@ def create_outputs(data_dir: str):
     # 2. Produce employment status
     # <><><><><><><><><><><><><><><><><><><><>
     employment_stats = {}
-    for proc_key in ["market_income", "latent_market_income"]:
+    for proc_key in ["market_income_per_week", "latent_market_income_per_week"]:
         employment_stats[f"mean_{proc_key}"] = (
             data[(data["life_stage"] == "alive")]
             .groupby("year")[proc_key]
             .mean()
             .reset_index(name=f"mean_{proc_key}")
         )
+
     return {
         "population": {"pop": pop_stats, "hhd": hhd_stats},
         "employment": {"income": employment_stats},

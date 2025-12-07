@@ -3,20 +3,43 @@ from logging import getLogger
 from os import makedirs
 from os.path import exists, join
 from pickle import dump as pickle_dump
-
+from copy import deepcopy
 from process.Python.data.utils import aggregate_population
 from process.Python.model.linear import linear_model
 from process.Python.model.utils import preprocess_data
 from process.Python.model.heckman_wage import heckman_wage_model
+from process.Python.model.random_utlity_function import utility_func
 
 logger = getLogger()
+
+
+def run_utility_func_model_fit(
+    df_input: DataFrame,
+    output_dir: dict,
+    proc_ages: str,
+    hours_options: list,
+    total_hours: float,
+):
+
+    logger.info(f"Utility model for {proc_ages}")
+
+    model_outputpath = f"{output_dir}/utility_params_{"-".join(proc_ages)}.pkl"
+
+    results, validation = utility_func(df_input, hours_options, total_hours)
+
+    pickle_dump(
+        {"params": results, "validation": validation},
+        open(model_outputpath, "wb"),
+    )
 
 
 def run_heckman_wage_model(
     pop_data: DataFrame,
     cfg: dict,
-    heckman_age_groups: list = ["0-18", "18-65", "65-999"],
+    heckman_age_group: str,
 ) -> DataFrame:
+
+    pop_data_input = deepcopy(pop_data)
 
     employment_cfg = cfg["behaviour_model"]["employment"]
 
@@ -32,7 +55,7 @@ def run_heckman_wage_model(
         f"Identified categoriec features are {cal_cols}, and start one-shot preprocessing ...",
     )
     pop_data_input, cal_cols_map = preprocess_data(
-        pop_data, cal_cols, reference_groups=None
+        pop_data_input, cal_cols, reference_groups=None
     )
 
     heckman_model_predictors = {"selection": [], "outcome": []}
@@ -43,36 +66,26 @@ def run_heckman_wage_model(
             else:
                 heckman_model_predictors[proc_pred_type].append(proc_var)
 
-    logger.info(
-        f"Due to different wage behaviours, the heckman model run over different age groups {heckman_age_groups}",
+    logger.info(f"Heckman model for {heckman_age_group}")
+
+    model_outputpath = (
+        f"{cfg["output_dirs"]["models"]}/model_heckman_wage_{heckman_age_group}.pkl"
     )
 
-    for proc_ages in heckman_age_groups:
+    heckman_age_group = heckman_age_group.split("-")
 
-        logger.info(f"Heckman model for {proc_ages}")
+    results = heckman_wage_model(
+        pop_data_input,
+        selection_col="employed",
+        outcome_col="market_income_per_week",
+        select_exog=heckman_model_predictors["selection"],
+        outcome_exog=heckman_model_predictors["outcome"],
+    )
 
-        model_outputpath = (
-            f"{cfg["output_dirs"]["models"]}/model_heckman_wage_{proc_ages}.pkl"
-        )
-
-        proc_ages = proc_ages.split("-")
-
-        proc_data_input = pop_data_input[
-            (pop_data_input["age"] >= int(proc_ages[0]))
-            & (pop_data_input["age"] < int(proc_ages[1]))
-        ]
-        results = heckman_wage_model(
-            proc_data_input,
-            selection_col="employed",
-            outcome_col="market_income",
-            select_exog=heckman_model_predictors["selection"],
-            outcome_exog=heckman_model_predictors["outcome"],
-        )
-
-        pickle_dump(
-            results,
-            open(model_outputpath, "wb"),
-        )
+    pickle_dump(
+        results,
+        open(model_outputpath, "wb"),
+    )
 
 
 def run_model(

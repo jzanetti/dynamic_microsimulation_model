@@ -10,6 +10,7 @@ import pyarrow as pa
 from pyarrow.parquet import read_table as pq_read_table
 from numpy import maximum, where, select
 from numpy.random import normal
+from process.Python.data import EPLISON
 
 SAMPLE_DATA_DIR = "etc/sample/"
 SAMPLE_DATA_CFG = {
@@ -390,6 +391,9 @@ def generate_sample_population(
 
     df = df.merge(hh_stats, on="household_id", how="left")
 
+    df["employed"] = (df["market_income"] > 0).astype(float)
+    df.loc[df["employed"] == False, "working_hours"] = EPLISON
+
     cols = [
         "id",
         "household_id",
@@ -406,7 +410,11 @@ def generate_sample_population(
         "n_adults",
         "n_seniors",
         "n_children",
+        "employed",
+        "working_hours",
     ]
+
+    # Postprocess:
 
     # Write output
     if not exists(SAMPLE_DATA_DIR):
@@ -436,5 +444,7 @@ def obtain_working_hours(df: DataFrame):
 
     # Method A: Simple Average (Deterministic)
     pop_merged["working_hours"] = pop_merged["hours_mean"]
+
+    pop_merged.loc[pop_merged["working_hours"] == 0, "working_hours"] = EPLISON
 
     return pop_merged

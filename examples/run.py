@@ -18,8 +18,8 @@ cfg = yaml_safe_load(open("examples/cfg.yml"))
 # ---------------------------
 # Create a sample population data
 # ---------------------------
-# generate_sample_population(n=10000)
-# generate_sample_supplements(required_data_types=["mortality"])
+generate_sample_population(n=10000)
+generate_sample_supplements(required_data_types=["mortality"])
 
 # ---------------------------
 # Create input data for DMM
@@ -59,7 +59,9 @@ run_dmm(sample_pop, cfg, start_year=2025, years=5)
 # ---------------------------
 # Creates outputs
 # ---------------------------
-output_results = create_outputs(data_dir=cfg["output_dirs"]["outputs"])
+output_results = create_outputs(
+    data_dir=cfg["output_dirs"]["outputs"], model_dir=cfg["output_dirs"]["models"]
+)
 
 # ---------------------------
 # Plot outputs
