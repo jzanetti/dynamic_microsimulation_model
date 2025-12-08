@@ -1,42 +1,44 @@
 
-# Ensure the output directory exists
+# --- Configuration & Constants ---
+
 SAMPLE_DATA_DIR <- file.path("etc", "sample")
+EPSILON <- 1e-6
 
 SAMPLE_DATA_CFG <- list(
-  household_types = list(
-    # --- Single Person ---
-    list(code = "1A", A = 1, S = 0, C = 0, prob = 0.14),
-    list(code = "1S", A = 0, S = 1, C = 0, prob = 0.10),
-    # --- Couples (No Kids) ---
-    list(code = "2A", A = 2, S = 0, C = 0, prob = 0.15),
-    list(code = "1A+1S", A = 1, S = 1, C = 0, prob = 0.03),
-    list(code = "2S", A = 0, S = 2, C = 0, prob = 0.08),
-    # --- Families with Children ---
-    list(code = "2A+1C", A = 2, S = 0, C = 1, prob = 0.10),
-    list(code = "2A+2C", A = 2, S = 0, C = 2, prob = 0.12),
-    list(code = "2A+3C", A = 2, S = 0, C = 3, prob = 0.05),
-    list(code = "1A+1C", A = 1, S = 0, C = 1, prob = 0.05),
-    list(code = "1A+2C", A = 1, S = 0, C = 2, prob = 0.04),
-    # --- Multi-Generational / Flatting ---
-    list(code = "3A", A = 3, S = 0, C = 0, prob = 0.05),
-    list(code = "2A+1S", A = 2, S = 1, C = 0, prob = 0.03),
-    list(code = "2A+1S+1C", A = 2, S = 1, C = 1, prob = 0.02),
-    list(code = "Others", A = 2, S = 0, C = 0, prob = 0.04)
-  )
+  # --- Single Person ---
+  list(code = "1A", A = 1, S = 0, C = 0, prob = 0.14),
+  list(code = "1S", A = 0, S = 1, C = 0, prob = 0.10),
+  # --- Couples (No Kids) ---
+  list(code = "2A", A = 2, S = 0, C = 0, prob = 0.15),
+  list(code = "1A+1S", A = 1, S = 1, C = 0, prob = 0.03),
+  list(code = "2S", A = 0, S = 2, C = 0, prob = 0.08),
+  # --- Families with Children ---
+  list(code = "2A+1C", A = 2, S = 0, C = 1, prob = 0.10),
+  list(code = "2A+2C", A = 2, S = 0, C = 2, prob = 0.12),
+  list(code = "2A+3C", A = 2, S = 0, C = 3, prob = 0.05),
+  list(code = "1A+1C", A = 1, S = 0, C = 1, prob = 0.05),
+  list(code = "1A+2C", A = 1, S = 0, C = 2, prob = 0.04),
+  # --- Multi-Generational / Flatting ---
+  list(code = "3A", A = 3, S = 0, C = 0, prob = 0.05),
+  list(code = "2A+1S", A = 2, S = 1, C = 0, prob = 0.03),
+  list(code = "2A+1S+1C", A = 2, S = 1, C = 1, prob = 0.02),
+  list(code = "Others", A = 2, S = 0, C = 0, prob = 0.04)
 )
 
 EMP_PARAMS <- list(
-  # Note: In R lists, keys are strings. 
-  # We will handle the parsing of numeric ranges inside the function.
   age_base_prob = list(
-    "0,14" = 0.00,
-    "15,19" = 0.40,
-    "20,29" = 0.75,
-    "30,54" = 0.88,
-    "55,64" = 0.7,
-    "65,74" = 0.02,
-    "75,100" = 0.0
+    "0-14" = 0.00,
+    "15-19" = 0.40,
+    "20-29" = 0.75,
+    "30-54" = 0.88,
+    "55-64" = 0.70,
+    "65-74" = 0.02,
+    "75-100" = 0.0
   ),
+  # Helper to reconstruct bins for cut()
+  age_breaks = c(0, 14, 19, 29, 54, 64, 74, 100),
+  age_labels = c(0.00, 0.40, 0.75, 0.88, 0.70, 0.02, 0.0),
+  
   gender_multiplier = c("Male" = 1.0, "Female" = 0.88),
   education_multiplier = c(
     "Not finished" = 0.30,
@@ -49,11 +51,19 @@ EMP_PARAMS <- list(
 WORKING_HRS <- data.frame(
   age_group = c("15-24", "15-24", "25-34", "25-34", "35-44", "35-44", 
                 "45-54", "45-54", "55-64", "55-64", "65+", "65+"),
-  gender    = c("Male", "Female", "Male", "Female", "Male", "Female", 
-                "Male", "Female", "Male", "Female", "Male", "Female"),
+  gender = c("Male", "Female", "Male", "Female", "Male", "Female",
+             "Male", "Female", "Male", "Female", "Male", "Female"),
   hours_mean = c(27.5, 23.5, 41.0, 35.0, 42.0, 29.5, 
-                 41.0, 34.0, 39.0, 33.0, 26.0, 22.0)
+                 41.0, 34.0, 39.0, 33.0, 26.0, 22.0),
+  stringsAsFactors = FALSE
 )
+
+# --- Helper: Clip function ---
+clip_val <- function(x, lower, upper) {
+  pmax(lower, pmin(x, upper))
+}
+
+# --- 1. Simulation Sample Mortality ---
 
 simulation_sample_mortality <- function(pop_input,
                                         b0 = -4.5,
@@ -66,53 +76,56 @@ simulation_sample_mortality <- function(pop_input,
                                           "Other" = 0.0
                                         )) {
   
-  # Copy implicit in R assignment usually, but explicit copy ensures independence if using environments
-  pop <- pop_input 
+  pop <- pop_input # Copy on write behavior in R
   
-  # Map ethnicity offsets
-  # Using named vector matching
+  # Map ethnicity
   pop$b_eth <- eth_offset_map[pop$ethnicity]
+  # Handle potential NAs if ethnicity not in map (optional safety)
+  pop$b_eth[is.na(pop$b_eth)] <- 0.0
   
   # Calculate "True" rate
-  # R's pnorm is the CDF (equivalent to scipy.stats.norm.cdf)
   z_score <- b0 + (b_age * pop$age) + pop$b_eth
   pop$true_rate <- pnorm(z_score)
   
-  # Calculate actual number of deaths (Binomial expectation)
-  # rbinom(n, size, prob)
+  # Calculate deaths (Binomial)
   pop$deaths <- rbinom(n = nrow(pop), size = 1, prob = pop$true_rate)
   
-  # Select specific columns
+  # Select columns
   mortality_data <- pop %>% select(age, ethnicity, deaths)
   
-  # Define bins matching range(0, 111, 10) -> 0, 10, ... 110
-  # Python: right=False means [0, 10)
+  # Binning
   bins <- seq(0, 110, by = 10)
+  # labels equivalent to f"{i}-{i+9}"
   labels <- paste0(bins[-length(bins)], "-", bins[-length(bins)] + 9)
   
-  # Create the 'age_group' column
   mortality_data$age_group <- cut(
-    mortality_data$age,
-    breaks = bins,
-    labels = labels,
-    right = FALSE,
+    mortality_data$age, 
+    breaks = bins, 
+    labels = labels, 
+    right = FALSE, 
     include.lowest = TRUE
   )
   
-  # Group by 'age_group' and 'ethnicity'
-  # summarise behaves like groupby().sum().reset_index()
-  mortality_data <- mortality_data %>%
+  # Group and Sum
+  mortality_summary <- mortality_data %>%
     group_by(age_group, ethnicity) %>%
     summarise(deaths = sum(deaths), .groups = "drop") %>%
     arrange(ethnicity, age_group) %>%
     rename(ethnicity_group = ethnicity)
   
-  return(mortality_data)
+  return(mortality_summary)
 }
+
+# --- 2. Generate Sample Supplements ---
 
 generate_sample_supplements <- function(required_data_types = c("mortality")) {
   
   proc_data_path <- file.path(SAMPLE_DATA_DIR, "pop_data.parquet")
+  
+  if (!file.exists(proc_data_path)) {
+    stop(paste("File not found:", proc_data_path))
+  }
+  
   pop_data <- read_parquet(proc_data_path)
   
   if ("mortality" %in% required_data_types) {
@@ -122,86 +135,58 @@ generate_sample_supplements <- function(required_data_types = c("mortality")) {
     if (!dir.exists(SAMPLE_DATA_DIR)) {
       dir.create(SAMPLE_DATA_DIR, recursive = TRUE)
     }
+    
     write_parquet(mortality_data, mortality_data_path)
   }
 }
 
+# --- 3. Obtain Employment Status ---
+
 obtain_employment_status <- function(df, params) {
-  df <- df # R creates a copy on write by default
   
-  # --- A. Apply Age Probabilities (The Base) ---
-  
-  # Parse the dictionary keys (which are strings in the R list) to get bins and values
-  age_prob_list <- params$age_base_prob
-  
-  # Sort keys to ensure order (mimicking sorted_age_keys) based on the start number
-  keys <- names(age_prob_list)
-  # Extract numeric start value for sorting
-  starts <- as.numeric(sapply(str_split(keys, ","), `[`, 1))
-  ends <- as.numeric(sapply(str_split(keys, ","), `[`, 2))
-  
-  sorted_indices <- order(starts)
-  sorted_keys <- keys[sorted_indices]
-  
-  # Construct bins
-  # Python logic: bins.append(sorted_age_keys[0][0]) then loop ends
-  # Note: Python's pd.cut(include_lowest=True) usually handles the first edge
-  bins <- c(starts[sorted_indices[1]])
-  labels <- numeric()
-  
-  for (k in sorted_keys) {
-    # Extract end value
-    end_val <- as.numeric(unlist(str_split(k, ","))[2])
-    bins <- c(bins, end_val)
-    labels <- c(labels, age_prob_list[[k]])
-  }
-  
-  # Map Age to Base Probability
-  # Python: include_lowest=True, right=True (default). 
-  # We use cut with include.lowest = TRUE.
-  df$base_prob <- as.numeric(as.character(cut(
+  # A. Apply Age Probabilities
+  # Using pre-calculated breaks and labels from EMP_PARAMS constant
+  df$base_prob <- cut(
     df$age,
-    breaks = bins,
-    labels = labels,
+    breaks = params$age_breaks,
+    labels = params$age_labels,
     include.lowest = TRUE,
-    ordered_result = FALSE
-  )))
+    right = TRUE 
+  )
   
-  # Handle NaN (ages outside defined bins)
+  # Convert factor to numeric
+  df$base_prob <- as.numeric(as.character(df$base_prob))
   df$base_prob[is.na(df$base_prob)] <- 0.0
   
-  # --- B. Apply Multipliers (Gender & Education) ---
-  # Using named vector lookup
+  # B. Apply Multipliers
   gender_factor <- params$gender_multiplier[df$gender]
   gender_factor[is.na(gender_factor)] <- 1.0
   
   edu_factor <- params$education_multiplier[df$education_level]
   edu_factor[is.na(edu_factor)] <- 1.0
   
-  # --- C. Calculate Joint Probability ---
+  # C. Joint Probability
   df$prob_employed <- df$base_prob * gender_factor * edu_factor
   
-  # --- D. Add Uncertainty (Noise) ---
-  # rnorm is equivalent to numpy.random.normal
+  # D. Add Noise
   noise <- rnorm(n = nrow(df), mean = 0.0, sd = 0.07)
   df$prob_employed <- df$prob_employed + noise
   
-  # --- E. Final Clip and Draw ---
-  # Clip to 0.0 to 1.0 using pmin/pmax
-  df$prob_employed <- pmin(pmax(df$prob_employed, 0), 1)
+  # E. Clip and Draw
+  df$prob_employed <- clip_val(df$prob_employed, 0, 1)
   
-  # Generate boolean status
   random_draws <- runif(nrow(df))
   df$is_employed <- random_draws < df$prob_employed
   
   return(df)
 }
 
+# --- 4. Obtain Market Income ---
+
 obtain_market_income <- function(df) {
   
-  # D. Market Income Calculation
-  # 1. Base Wage (Annual, Full-time equivalent baseline)
-  # rlnorm takes meanlog and sdlog
+  # 1. Base Wage (Log-normal)
+  # R's rlnorm takes meanlog and sdlog
   base_wage_dist <- rlnorm(n = nrow(df), meanlog = 10.6, sdlog = 0.1)
   
   # 2. Education Multiplier
@@ -213,20 +198,18 @@ obtain_market_income <- function(df) {
   )
   edu_factor <- educ_map[df$education_level]
   
-  # 3. Age Multiplier (The "Career Arc")
-  # Clip age to 18 to avoid issues
-  age_calc <- pmin(pmax(df$age, 18), 80)
+  # 3. Age Multiplier
+  age_calc <- clip_val(df$age, 18, 80)
   age_factor <- 1 + 0.025 * (age_calc - 20) - 0.00035 * (age_calc - 20)^2
   age_factor <- pmax(age_factor, 0.5)
   
-  # 4. Gender Multiplier (Statistical Wage Gap)
-  # ifelse is vectorised
+  # 4. Gender Multiplier
   gender_factor <- ifelse(df$gender == "Male", 1.0, 0.90)
   
-  # 5. Calculate Final Market Income
+  # 5. Final Calculation
   df$market_income <- base_wage_dist * edu_factor * age_factor * gender_factor
   
-  # 6. Apply Unemployment (Zero market income if not employed)
+  # 6. Apply Unemployment
   df$market_income[!df$is_employed] <- 0
   
   # Rounding
@@ -235,67 +218,93 @@ obtain_market_income <- function(df) {
   return(df)
 }
 
+# --- 5. Obtain Benefit Income ---
+
 obtain_benefit_income <- function(df) {
-  # E. Benefit Income (Simple Superannuation)
   df$benefit_income <- 0.0
-  # NZ Super: Universal for 65+, approx 26k net
   df$benefit_income[df$age >= 65] <- 26000
   return(df)
 }
 
-generate_sample_population <- function(n = 1000, seed_num = 42, hh_configs = SAMPLE_DATA_CFG$household_types) {
-  if (!is.null(seed_num)) {
-    set.seed(seed_num)
-  }
+# --- 6. Obtain Working Hours ---
+
+obtain_working_hours <- function(df) {
   
-  # --- 1. Define Household Compositions ---
+  # Setup Bins matching Python logic
+  bins <- c(14, 24, 34, 44, 54, 64, 999)
+  age_order <- unique(WORKING_HRS$age_group) # e.g. "15-24", "25-34"...
+  
+  # Assign Age Group in Main Data
+  df$age_group <- cut(
+    df$age,
+    breaks = bins,
+    labels = age_order,
+    include.lowest = FALSE # (14, 24] -> 15-24
+  )
+  
+  # Merge reference hours
+  pop_merged <- left_join(df, WORKING_HRS, by = c("age_group", "gender"))
+  
+  # Assign Hours
+  pop_merged$working_hours <- pop_merged$hours_mean
+  
+  # Handle NA (if any) and Zero logic
+  pop_merged$working_hours[is.na(pop_merged$working_hours)] <- 0
+  pop_merged$working_hours[pop_merged$working_hours == 0] <- EPSILON
+  
+  # Clean up extra columns from merge if desired (hours_mean)
+  pop_merged$hours_mean <- NULL
+  
+  return(pop_merged)
+}
+
+# --- 7. Generate Sample Population (Main) ---
+
+generate_sample_population <- function(n = 1000, 
+                                       seed_num = 42, 
+                                       hh_configs = SAMPLE_DATA_CFG) {
+  
+  if (!is.null(seed_num)) set.seed(seed_num)
+  
+  # Probability vector for configs
   probs <- sapply(hh_configs, function(x) x$prob)
-  probs <- probs / sum(probs) # Normalise
+  probs <- probs / sum(probs) # Normalize
   
-  # --- 2. Generate Households Loop ---
-  people_data <- list()
+  people_data_list <- list()
   hh_id <- 1
   current_n <- 0
   
-  # Pre-calculate indices to sample from (0-indexed to match python range logic or 1-indexed for R)
-  hh_indices <- 1:length(hh_configs)
-  
+  # Loop until N reached
   while (current_n < n) {
-    # choice equivalent in R is sample
-    config_idx <- sample(hh_indices, 1, prob = probs)
-    config <- hh_configs[[config_idx]]
-    members <- list()
     
-    # -- (Existing Age Logic Preserved) --
+    # Choose config
+    config_idx <- sample(seq_along(hh_configs), 1, prob = probs)
+    config <- hh_configs[[config_idx]]
+    
+    # Head Age Logic
     if (config$S > 0 && config$A == 0) {
-      # randint(65, 90) -> sample(65:89, 1) in Python usually excludes endpoint, 
-      # but numpy.random.randint includes low, excludes high.
-      # Python: randint(65, 90) -> [65, 89]. R sample(65:89, 1).
-      head_age <- sample(65:89, 1)
+      head_age <- floor(runif(1, 65, 91)) # randint(65, 90) -> 65..90 inclusive
     } else if (config$C > 0) {
-      head_age <- as.integer(rnorm(1, 40, 8))
-      head_age <- pmin(pmax(head_age, 20), 60)
+      head_age <- round(rnorm(1, 40, 8))
+      head_age <- clip_val(head_age, 20, 60)
     } else if (config$S > 0 && config$A > 0) {
-      head_age <- sample(55:69, 1) # Python randint(55, 70)
+      head_age <- floor(runif(1, 55, 71)) # randint(55, 70)
     } else {
-      head_age <- as.integer(rnorm(1, 35, 12))
-      head_age <- pmin(pmax(head_age, 18), 64)
+      head_age <- round(rnorm(1, 35, 12))
+      head_age <- clip_val(head_age, 18, 64)
     }
+    
+    members <- list()
     
     # Create Adults
     if (config$A > 0) {
       for (i in 1:config$A) {
-        # Logic: i == 0 (1st iteration) and config['S'] == 0
-        is_first_adult <- (i == 1 && config$S == 0)
-        
-        if (is_first_adult) {
+        if (i == 1 && config$S == 0) {
           age <- head_age
         } else {
-          # randint(-5, 6) -> range [-5, 5]
-          offset <- sample(-5:5, 1)
-          age <- head_age + offset
+          age <- head_age + floor(runif(1, -5, 6)) # randint(-5, 5)
         }
-        members[[length(members) + 1]] <- list(role = "Adult", age = pmin(pmax(age, 18), 64))
+        members[[length(members) + 1]] <- list(role = "Adult", age = clip_val(age, 18, 64))
       }
     }
     
@@ -305,13 +314,9 @@ generate_sample_population <- function(n = 1000, seed_num = 42, hh_configs = SAM
         if (config$A == 0 && i == 1) {
           age <- head_age
         } else if (config$A > 0) {
-          # randint(20, 30) -> [20, 29]
-          offset <- sample(20:29, 1)
-          age <- head_age + offset
+          age <- head_age + floor(runif(1, 20, 31)) # randint(20, 30)
         } else {
-          # randint(-5, 6) -> [-5, 5]
-          offset <- sample(-5:5, 1)
-          age <- head_age + offset
+          age <- head_age + floor(runif(1, -5, 6))
         }
         members[[length(members) + 1]] <- list(role = "Senior", age = max(65, age))
       }
@@ -320,84 +325,63 @@ generate_sample_population <- function(n = 1000, seed_num = 42, hh_configs = SAM
     # Create Children
     if (config$C > 0) {
       for (i in 1:config$C) {
-        # randint(20, 42) -> [20, 41]
-        offset <- sample(20:41, 1)
-        age <- head_age - offset
-        members[[length(members) + 1]] <- list(role = "Child", age = pmin(pmax(age, 0), 17))
+        age <- head_age - floor(runif(1, 20, 43)) # randint(20, 42)
+        members[[length(members) + 1]] <- list(role = "Child", age = clip_val(age, 0, 17))
       }
     }
     
     # Assign Attributes
     hh_region <- sample(
-      c("Auckland", "Wellington", "Christchurch", "Others"),
-      1,
+      c("Auckland", "Wellington", "Christchurch", "Others"), 
+      1, 
       prob = c(0.34, 0.10, 0.08, 0.48)
     )
     
+    # Add to main list
     for (m in members) {
-      if (current_n >= n + 50) break
+      if (current_n >= n + 50) break # Buffer break
       
-      # Update member with common attributes
       m$household_id <- hh_id
       m$household_type <- config$code
       m$region <- hh_region
       m$gender <- sample(c("Male", "Female"), 1, prob = c(0.49, 0.51))
       
-      people_data[[length(people_data) + 1]] <- m
+      people_data_list[[length(people_data_list) + 1]] <- m
       current_n <- current_n + 1
     }
     hh_id <- hh_id + 1
   }
   
-  # Convert list of lists to DataFrame
-  # bind_rows is efficient for this
-  df <- bind_rows(people_data)
+  # Convert list of lists to DF
+  df <- bind_rows(people_data_list)
+  df <- head(df, n) # Slice exact n
+  df$id <- seq_len(nrow(df))
   
-  # Slice to exactly n
-  df <- df[1:n, ]
-  df$id <- 1:n
-  
-  # --- 3. Demographic & Socio-Economic Logic (UPDATED) ---
+  # --- 3. Demographic & Socio-Economic Logic ---
   
   # A. Ethnicity
   df$ethnicity <- "European"
   eth_cats <- c("European", "Maori", "Pacific", "Asian", "Other")
   
-  # Vectorized assignment
-  mask_under_20 <- df$age < 20
-  if (sum(mask_under_20) > 0) {
-    df$ethnicity[mask_under_20] <- sample(
-      eth_cats,
-      size = sum(mask_under_20),
-      replace = TRUE,
-      prob = c(0.50, 0.25, 0.12, 0.10, 0.03)
-    )
+  # Masks
+  mask_under20 <- df$age < 20
+  mask_working <- df$age >= 20 & df$age < 65
+  mask_senior <- df$age >= 65
+  
+  if (any(mask_under20)) {
+    df$ethnicity[mask_under20] <- sample(eth_cats, sum(mask_under20), replace=TRUE, prob=c(0.50, 0.25, 0.12, 0.10, 0.03))
+  }
+  if (any(mask_working)) {
+    df$ethnicity[mask_working] <- sample(eth_cats, sum(mask_working), replace=TRUE, prob=c(0.60, 0.15, 0.08, 0.14, 0.03))
+  }
+  if (any(mask_senior)) {
+    df$ethnicity[mask_senior] <- sample(eth_cats, sum(mask_senior), replace=TRUE, prob=c(0.85, 0.07, 0.03, 0.04, 0.01))
   }
   
-  mask_20_65 <- (df$age >= 20) & (df$age < 65)
-  if (sum(mask_20_65) > 0) {
-    df$ethnicity[mask_20_65] <- sample(
-      eth_cats,
-      size = sum(mask_20_65),
-      replace = TRUE,
-      prob = c(0.60, 0.15, 0.08, 0.14, 0.03)
-    )
-  }
-  
-  mask_over_65 <- df$age >= 65
-  if (sum(mask_over_65) > 0) {
-    df$ethnicity[mask_over_65] <- sample(
-      eth_cats,
-      size = sum(mask_over_65),
-      replace = TRUE,
-      prob = c(0.85, 0.07, 0.03, 0.04, 0.01)
-    )
-  }
-  
-  # B. Education Assignment (18+)
+  # B. Education (18+)
   df$education_level <- "Not finished"
   mask_edu <- df$age >= 18
-  if (sum(mask_edu) > 0) {
+  if (any(mask_edu)) {
     df$education_level[mask_edu] <- sample(
       c("Not finished", "School", "Vocational", "University"),
       size = sum(mask_edu),
@@ -406,14 +390,15 @@ generate_sample_population <- function(n = 1000, seed_num = 42, hh_configs = SAM
     )
   }
   
-  # C. Employment Status
+  # C. Employment & Income pipelines
   df <- obtain_employment_status(df, EMP_PARAMS)
   df <- obtain_market_income(df)
   df <- obtain_benefit_income(df)
   df <- obtain_working_hours(df)
   
   # --- 4. Final Data Cleanup ---
-  # HH Stats aggregation
+  
+  # Household stats
   hh_stats <- df %>%
     group_by(household_id) %>%
     summarise(
@@ -423,66 +408,26 @@ generate_sample_population <- function(n = 1000, seed_num = 42, hh_configs = SAM
       .groups = "drop"
     )
   
-  # Merge
   df <- left_join(df, hh_stats, by = "household_id")
   
+  # Employed Flag & Working Hours cleanup
+  df$employed <- as.numeric(df$market_income > 0)
+  df$working_hours[df$employed == 0] <- EPSILON
+  
   cols <- c(
-    "id",
-    "household_id",
-    "household_type",
-    "role",
-    "age",
-    "gender",
-    "ethnicity",
-    "region",
-    "education_level",
-    "is_employed",
-    "market_income",
-    "benefit_income",
-    "n_adults",
-    "n_seniors",
-    "n_children",
-    "working_hours"
+    "id", "household_id", "household_type", "role", "age", "gender", 
+    "ethnicity", "region", "education_level", "is_employed", 
+    "market_income", "benefit_income", "n_adults", "n_seniors", 
+    "n_children", "employed", "working_hours"
   )
   
-  # Write output
+  # Write Output
   if (!dir.exists(SAMPLE_DATA_DIR)) {
     dir.create(SAMPLE_DATA_DIR, recursive = TRUE)
   }
   
   pop_data_path <- file.path(SAMPLE_DATA_DIR, "pop_data.parquet")
-  
-  # Write strictly the columns requested
-  write_parquet(df[, cols], pop_data_path)
+  write_parquet(df %>% select(all_of(cols)), pop_data_path)
   
   return(df)
-}
-
-
-obtain_working_hours <- function(df) {
-  # Assumes WORKING_HRS is already a dataframe in your global environment
-  df_hours <- WORKING_HRS
-  
-  # 1. Get ordered labels from the unique values in the lookup table
-  age_order <- unique(df_hours$age_group)
-  
-  # 2. Define bins (14 to ensure 15 is included, 999 as catch-all)
-  # R's cut() includes the rightmost value by default, just like pandas
-  bins <- c(14, 24, 34, 44, 54, 64, 999)
-  
-  # 3. Pipeline: Binning -> Joining -> Assigning
-  pop_merged <- df %>%
-    mutate(
-      # cut() creates a factor (Categorical) automatically
-      age_group = cut(age, breaks = bins, labels = age_order)
-    ) %>%
-    # Left join is equivalent to merge(..., how='left')
-    left_join(df_hours, by = c("age_group", "gender")) %>%
-    mutate(
-      working_hours = hours_mean
-    )
-  
-  pop_merged$hours_mean <- NULL
-  
-  return(pop_merged)
 }

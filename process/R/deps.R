@@ -10,8 +10,7 @@ library(tidyr)
 library(arrow)
 library(purrr)
 library(stats)
-
-
+library(gridExtra)
 
 
 # ------------------------
@@ -25,6 +24,7 @@ vis_env <- new.env()
 model_linear_env <- new.env()
 model_wrapper_env <- new.env()
 model_utils_env <- new.env()
+model_ruf_env <- new.env()
 dmm_env <- new.env()
 person_env <- new.env()
 mortality_env <- new.env()

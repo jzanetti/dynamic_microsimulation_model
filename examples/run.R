@@ -12,6 +12,7 @@ source("process/R/person.R", local = person_env)
 source("process/R/mortality.R", local = mortality_env)
 source("process/R/employment.R", local = employment_env)
 source("process/R/model/utils.R", local = model_utils_env)
+source("process/R/model/random_utility_function.R", local = model_ruf_env)
 
 # ---------------------------
 # Load configuration file
@@ -21,8 +22,8 @@ cfg <- read_yaml("examples/cfg.yml")
 # ---------------------------
 # Create a sample population data
 # ---------------------------
-data_sample_env$generate_sample_population(n=10000)
-data_sample_env$generate_sample_supplements(required_data_types=c("mortality"))
+# data_sample_env$generate_sample_population(n=10000)
+# data_sample_env$generate_sample_supplements(required_data_types=c("mortality"))
 
 # ---------------------------
 # Create input data for DMM

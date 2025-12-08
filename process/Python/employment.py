@@ -72,8 +72,6 @@ def run_utility(
         pop_data, output_dir, proc_ages, hours_options, total_hours
     )
 
-    return pop_data
-
 
 def run_heckman_model(pop_data: DataFrame, cfg: dict, proc_age_group: str) -> DataFrame:
 
