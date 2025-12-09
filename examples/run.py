@@ -18,7 +18,7 @@ cfg = yaml_safe_load(open("examples/cfg.yml"))
 # ---------------------------
 # Create a sample population data
 # ---------------------------
-# generate_sample_population(n=10000)
+generate_sample_population(n=10000)
 # generate_sample_supplements(required_data_types=["mortality"])
 
 # ---------------------------

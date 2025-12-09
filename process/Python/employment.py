@@ -76,6 +76,7 @@ def run_utility(
 def run_heckman_model(pop_data: DataFrame, cfg: dict, proc_age_group: str) -> DataFrame:
 
     run_heckman_wage_model(pop_data, cfg, heckman_age_group=proc_age_group)
+
     updated_results = run_heckman_wage_model_prediction(
         cfg["output_dirs"]["models"], proc_age_group
     )
