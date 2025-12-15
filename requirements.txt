@@ -6,3 +6,4 @@ scipy
 scikit-learn
 pyarrow
 statsmodels
+dash_bootstrap_components 

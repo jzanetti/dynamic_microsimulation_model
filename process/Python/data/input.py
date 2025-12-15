@@ -65,8 +65,9 @@ def prepare_ruf_inputs(
     all_household_ids = df_input["household_id"].unique()
     long_data = []
     for index1, proc_hhld_id in enumerate(all_household_ids):
-
-        logger.info(f"Processing input: {round(100 * index1 / len(all_household_ids), 3)}%")
+        
+        if index1 % 10 == 0:
+            logger.info(f"Processing input: {round(100 * index1 / len(all_household_ids), 3)}%")
 
         proc_hhld = df_input[df_input["household_id"] == proc_hhld_id]
 

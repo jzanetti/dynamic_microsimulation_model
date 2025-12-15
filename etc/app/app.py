@@ -9,10 +9,9 @@ from os.path import join
 from process.Python.model.random_utlity_function import utility_func
 from process.Python.model.validation import run_ruf_validation, run_ruf_sensitivity
 from process.Python.data.tawa import tawa_data_preprocess
-# Note: plot_intermediate is not imported because we reimplement the logic in Dash/Plotly
 from process.Python.data.filename import create_hash_filename
 
-FORCE_RERUN = True
+FORCE_RERUN = False
 
 HH_SIZE_PRESETS = {
     "No Filter": None,
@@ -104,11 +103,35 @@ def load_and_process_model(input_params, hes_path="etc/app/Synthetic-HES23-singl
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 server = app.server
 
+
+# 1. Define a helper function to create labels with help text
+def render_label_with_help(label_text, help_text, id_suffix):
+    return html.Div([
+        html.Label(label_text, className="me-2"),  # The label itself
+        
+        # The 'Icon' (using a Badge for simplicity, no external icons needed)
+        dbc.Badge(
+            "?", 
+            id=f"tooltip-target-{id_suffix}",
+            color="light",
+            text_color="primary",
+            className="ms-1 border",
+            style={"cursor": "pointer", "borderRadius": "50%", "padding": "4px 8px"}
+        ),
+        
+        # The Tooltip component linking to the Badge
+        dbc.Tooltip(
+            help_text,
+            target=f"tooltip-target-{id_suffix}",
+            placement="right",  # Tooltip appears to the right of the sidebar
+        ),
+    ], className="d-flex align-items-center mb-1") # Flexbox to align text and icon
+
 # Define Layout
 app.layout = dbc.Container([
     dcc.Store(id='history-store', data=[]), # Stores list of previous runs
 
-    html.H2("Random Utility Function: Interactive Model", className="my-4 text-center"),
+    html.H2("Employment Behaviour Model TestBed", className="my-4 text-center"),
     html.P(
             "This portal is used to test the Employment Behaviour Model ~ Cached runs are instant, but new scenarios will require calculation time", 
             className="text-center lead text-muted mb-4" # 'lead' makes it larger, 'text-muted' makes it grey
@@ -120,28 +143,47 @@ app.layout = dbc.Container([
                 dbc.CardHeader("Model Parameters"),
                 dbc.CardBody([
                     # Wage
-                    html.Label("Min Hourly Wage ($)"),
+                    render_label_with_help(
+                        "Min Hourly Wage ($)", 
+                        "The minimum wage is assigned to people who just start working, " + \
+                        " ideally this should come from Heckman Wage Model, but minimum wage is used here for simplicity", 
+                        "wage"
+                    ),
                     dbc.Input(id='input-wage', type='number', value=23.0, step=0.5, className="mb-2"),
                     
                     # Leisure
-                    html.Label("Leisure Value"),
+                    render_label_with_help(
+                        "Leisure Value ($)", 
+                        "How much leisure worth ($), by default it is set to minimum wage/hour", 
+                        "leisure"
+                    ),
                     dbc.Input(id='input-leisure', type='number', value=23.0, step=0.5, className="mb-2"),
                     
-                    # Hours Options (Simplified as text for list input)
-                    html.Label("Hours Options (comma separated)"),
+                    render_label_with_help(
+                        "Working hours options (comma separated)", 
+                        "How many hours people may choose to work per week. The result is very sensitive to this option.", 
+                        "hours"
+                    ),
                     dbc.Input(id='input-hours-opt', type='text', value="0, 10, 20, 30, 40", className="mb-2"),
-                    
-                    # Total Hours Base
-                    html.Label("Total Hours Constraint"),
+
+                    render_label_with_help(
+                        "Total Hours Constraint", 
+                        "How many hours people can spend in total per week. Based on most literatures, it is set to 80 hours.", 
+                        "hours2"
+                    ),
                     dbc.Input(id='input-total-hours', type='number', value=80.0, className="mb-2"),
 
-                    # Filters
-                    html.Label("Household Income Filter (Min - Max)"),
+                    render_label_with_help(
+                        "Household Income Filter (Min - Max)", 
+                        "These parameters define thresholds to exclude values that are too large or too small, thereby preserving numerical stability.", 
+                        "value_filter"
+                    ),
                     dbc.Row([
                         dbc.Col(dbc.Input(id='input-inc-min', type='number', value=0.1, step=0.05)),
                         dbc.Col(dbc.Input(id='input-inc-max', type='number', value=0.7, step=0.05)),
                     ], className="mb-2"),
 
+                    html.Hr(),
                     # Switches (Seniors)
                     dbc.Checklist(
                         options=[{"label": "Exclude Seniors", "value": True}],

@@ -13,7 +13,7 @@ if __name__ == "__main__":
         "min_hourly_wage": 23.0,
         "leisure_value": 23.0,
         "exclude_seniors": False,
-        "hours_options": [0, 10, 20, 30],
+        "hours_options": [0, 10, 20, 30, 40],
         "apply_household_income_filter": {"min": 0.1, "max": 0.7},
         "apply_earner_type_filter": None, 
         "apply_household_size_filter": None
