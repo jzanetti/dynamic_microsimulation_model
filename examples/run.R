@@ -3,6 +3,7 @@ source("process/R/data/sample.R", local = data_sample_env)
 source("process/R/data/utils.R", local = data_utils_env)
 source("process/R/data/input.R", local = data_input_env)
 source("process/R/data/output.R", local = data_output_env)
+source("process/R/data/filename.R", local = data_filename_env)
 source("process/R/model/wrapper.R", local = model_wrapper_env)
 source("process/R/model/linear.R", local = model_linear_env)
 source("process/R/model/heckman_wage.R", local = model_heckman_wage_env)
@@ -13,6 +14,7 @@ source("process/R/mortality.R", local = mortality_env)
 source("process/R/employment.R", local = employment_env)
 source("process/R/model/utils.R", local = model_utils_env)
 source("process/R/model/random_utility_function.R", local = model_ruf_env)
+source("process/R/model/validation.R", local = model_validation_env)
 
 # ---------------------------
 # Load configuration file
@@ -22,15 +24,15 @@ cfg <- read_yaml("examples/cfg.yml")
 # ---------------------------
 # Create a sample population data
 # ---------------------------
-# data_sample_env$generate_sample_population(n=10000)
-# data_sample_env$generate_sample_supplements(required_data_types=c("mortality"))
+data_sample_env$generate_sample_population(n=10000)
+data_sample_env$generate_sample_supplements(required_data_types=c("mortality", "heckman", "ruf"))
 
 # ---------------------------
 # Create input data for DMM
 # ---------------------------
 sample_pop <- data_input_env$create_inputs(
   "etc/sample", 
-  required_data_types = c("pop", "mortality"), 
+  required_data_types = c("pop", "mortality", "ruf", "heckman"), 
   data_type = "parquet", 
   base_year=cfg[["base_year"]])
 
@@ -39,19 +41,30 @@ sample_pop <- data_input_env$create_inputs(
 # ---------------------------
 vis_env$plot_inputs(
   sample_pop[["pop"]], 
-  exclude_col=c("id", "household_id", "base_year") , 
+  exclude_col=c("id", "household_id", "base_year"), 
   output_dir = cfg[["output_dirs"]][["figures"]])
 
 # ---------------------------
 # Create necessary models
 # ---------------------------
-for (proc_model_name in c("mortality")) {
-  model_wrapper_env$run_model(
-    sample_pop,
-    proc_model_name,
-    cfg[["models"]][[proc_model_name]],
-    cfg[["output_dirs"]][["models"]]
-  )
+for (proc_model_name in c("mortality", "heckman", "ruf")) {
+  
+  if (proc_model_name == "mortality") {
+    model_wrapper_env$run_model(
+      sample_pop,
+      proc_model_name,
+      cfg[["models"]][[proc_model_name]],
+      cfg[["output_dirs"]][["models"]]
+    )
+  }
+  
+  if (proc_model_name == "heckman") {
+    model_wrapper_env$run_heckman_wage_model(sample_pop[["heckman"]], cfg)
+  }
+  
+  if (proc_model_name == "ruf") {
+    model_wrapper_env$run_ruf_model(sample_pop[["ruf"]], cfg, recreate_data = FALSE)
+  }
 }
 
 # ---------------------------

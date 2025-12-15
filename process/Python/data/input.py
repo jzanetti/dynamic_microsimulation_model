@@ -1,7 +1,13 @@
 from pyarrow.parquet import read_table as pq_read_table
+from pyarrow.parquet import write_table as pq_write_table
+import pyarrow as pa
 from os.path import join
 from pandas import DataFrame
+from copy import deepcopy
+from itertools import product as iter_product
+from logging import getLogger
 
+logger = getLogger()
 
 def add_initial_pop_status(pop: DataFrame) -> DataFrame:
     pop["life_stage"] = "alive"
@@ -30,3 +36,100 @@ def create_inputs(
         inputs[proc_data_type] = proc_table
 
     return inputs
+
+
+def prepare_ruf_inputs(
+    df_input: DataFrame, 
+    hours_options: list, 
+    total_hours: int, 
+    leisure_value: float, 
+    income_name: dict, 
+    working_hours_name: str, 
+    data_scaler: float = 1000.0,
+    data_output_path: str = None
+):
+
+    # select relevant features
+    df_input = deepcopy(
+        df_input[
+            [
+                "id",
+                "household_id",
+                "selected",
+                income_name["market"],
+                working_hours_name,
+            ]
+        ]
+    )
+
+    all_household_ids = df_input["household_id"].unique()
+    long_data = []
+    for index1, proc_hhld_id in enumerate(all_household_ids):
+
+        logger.info(f"Processing input: {round(100 * index1 / len(all_household_ids), 3)}%")
+
+        proc_hhld = df_input[df_input["household_id"] == proc_hhld_id]
+
+        num_people = len(proc_hhld)
+        all_possible_hours_combination = list(
+            iter_product(hours_options, repeat=num_people)
+        )
+
+        chosen_combination = min(
+            all_possible_hours_combination,
+            key=lambda c: sum(
+                (a - b) ** 2 for a, b in zip(c, list(proc_hhld["working_hours"].values))
+            ),
+        )
+
+        for proc_combination in all_possible_hours_combination:
+
+            is_chosen = 0
+            if proc_combination == chosen_combination:
+                is_chosen = 1
+
+            proc_data_list = []
+            proc_hhld_income = 0
+            for index2, proc_hours in enumerate(proc_combination):
+                proc_person = proc_hhld.iloc[index2]
+                person_wage = proc_person[income_name["market"]]
+                leisure_hours = total_hours - proc_hours
+
+                if proc_hours > 0:
+                    market_income_person = person_wage * proc_hours
+                else:
+                    market_income_person = 0
+
+                gross_income_person = market_income_person
+
+                proc_hhld_income += gross_income_person
+                
+                if proc_person["selected"]:
+                    proc_data_list.append(
+                        {
+                            "household_id": int(proc_hhld["household_id"].values[0]),
+                            "people_id": int(proc_person["id"]),
+                            "option_hours": proc_hours,
+                            "is_chosen": is_chosen,
+                            "income": gross_income_person,
+                            "leisure": leisure_hours * leisure_value,
+                        }
+                    )
+
+            for proc_data in proc_data_list:
+                if proc_hhld_income == 0:
+                    proc_hhld_income = 1e-9
+                proc_data["income_hhld"] = proc_hhld_income
+
+            long_data.extend(proc_data_list)
+
+
+    results = DataFrame(long_data)
+
+    # results = results.drop_duplicates()
+
+    results["income_to_income_hhld"] = results["income"] / results["income_hhld"]
+    for proc_key in ["income", "income_hhld", "leisure"]:
+        results[proc_key] = results[proc_key] / data_scaler
+
+    pq_write_table(pa.Table.from_pandas(results), data_output_path)

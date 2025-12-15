@@ -4,6 +4,14 @@ This is the core model for the Dynamic Microsimulation Model (DMM). The model is
 
 ## How to install the package
 
+## Set up the environment:
+
+For R, using:
+```R
+renv::init(bare = TRUE)
+renv::hydrate()
+```
+
 ## A quick start:
 
 ### Step 1: Create a sample population dataset

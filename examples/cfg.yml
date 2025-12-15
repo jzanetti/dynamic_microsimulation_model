@@ -20,15 +20,19 @@ models:
 
 behaviour_model:
   employment:
-    predictors:
+    heckman:
       selection:
         - "age"
         - "gender"
       outcome:
         - "age"
         - "education_level"
-    total_hrs: 80
-    possible_working_hrs:
-      - 0
-      - 20
-      - 40
+    ruf:
+      total_hrs: 80
+      min_hourly_wage: 23
+      leisure_value: 23
+      possible_working_hrs:
+        - 0
+        - 10
+        - 20
+        - 30

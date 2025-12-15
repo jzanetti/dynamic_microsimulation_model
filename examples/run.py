@@ -6,7 +6,7 @@ from process.Python.data.input import create_inputs
 from process.Python.data.output import create_outputs
 from process.Python.vis import plot_inputs, plot_outputs
 from yaml import safe_load as yaml_safe_load
-from process.Python.model.wrapper import run_model
+from process.Python.model.wrapper import run_model, run_heckman_wage_model, run_ruf_model
 from process.Python.dmm import run_dmm
 
 
@@ -18,15 +18,15 @@ cfg = yaml_safe_load(open("examples/cfg.yml"))
 # ---------------------------
 # Create a sample population data
 # ---------------------------
-generate_sample_population(n=10000)
-# generate_sample_supplements(required_data_types=["mortality"])
+#generate_sample_population(n=10000)
+# generate_sample_supplements(required_data_types=["mortality", "heckman", "ruf"])
 
 # ---------------------------
 # Create input data for DMM
 # ---------------------------
 sample_pop = create_inputs(
     "etc/sample/",
-    required_data_types=["pop", "mortality"],
+    required_data_types=["pop", "mortality", "ruf", "heckman"],
     data_type="parquet",
     base_year=cfg["base_year"],
 )
@@ -43,13 +43,21 @@ plot_inputs(
 # ---------------------------
 # Create necessary models
 # ---------------------------
-for proc_model_name in ["mortality"]:
-    run_model(
-        sample_pop,
-        proc_model_name,
-        cfg=cfg["models"][proc_model_name],
-        output_dir=cfg["output_dirs"]["models"],
-    )
+for proc_model_name in ["mortality", "heckman", "ruf"]:
+
+    if proc_model_name in ["mortality"]:
+        run_model(
+            sample_pop,
+            proc_model_name,
+            cfg=cfg["models"][proc_model_name],
+            output_dir=cfg["output_dirs"]["models"],
+        )
+
+    if proc_model_name == "heckman":
+        run_heckman_wage_model(sample_pop["heckman"], cfg)
+
+    if proc_model_name == "ruf":
+        run_ruf_model(sample_pop["ruf"], cfg, recreate_data = False)
 
 # ---------------------------
 # Run DMM processing

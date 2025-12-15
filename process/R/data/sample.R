@@ -131,13 +131,21 @@ generate_sample_supplements <- function(required_data_types = c("mortality")) {
   if ("mortality" %in% required_data_types) {
     mortality_data <- simulation_sample_mortality(pop_data)
     mortality_data_path <- file.path(SAMPLE_DATA_DIR, "mortality_data.parquet")
-    
-    if (!dir.exists(SAMPLE_DATA_DIR)) {
-      dir.create(SAMPLE_DATA_DIR, recursive = TRUE)
-    }
-    
     write_parquet(mortality_data, mortality_data_path)
   }
+  
+  if ("ruf" %in% required_data_types) {
+    ruf_data <- simulation_sample_ruf(pop_data)
+    ruf_data_path <- file.path(SAMPLE_DATA_DIR, "ruf_data.parquet")
+    write_parquet(ruf_data, ruf_data_path)
+  }
+  
+  if ("heckman" %in% required_data_types) {
+    heckman_data <- simulation_sample_heckman(pop_data)
+    heckman_data_path <- file.path(SAMPLE_DATA_DIR, "heckman_data.parquet")
+    write_parquet(heckman_data, heckman_data_path)
+  }
+  
 }
 
 # --- 3. Obtain Employment Status ---
@@ -430,4 +438,83 @@ generate_sample_population <- function(n = 1000,
   write_parquet(df %>% select(all_of(cols)), pop_data_path)
   
   return(df)
+}
+
+
+simulation_sample_ruf <- function(df_input) {
+  # Transforms raw household census/survey data into the specific format 
+  # required for the dashboard/model.
+  # 
+  # Args:
+  #     df_input (data.frame): The raw dataframe containing 'id', 'household_id', 
+  #                            'age', 'market_income', 'working_hours', etc.
+  #                            
+  # Returns:
+  #     data.frame: A dataframe with calculated weekly incomes, age groups, 
+  #                 and household aggregates.
+  
+  # Create a copy (R does "copy-on-modify" automatically, but explicit assignment creates the local variable)
+  df <- df_input
+  
+  # 1. Calculate Market Income Per Week
+  # Assumption: Input 'market_income' is Annual. 
+  # If input is already weekly, remove the `/ 52`.
+  # Python: .round(0).astype(int)
+  df$market_income_per_week <- as.integer(round(df$market_income / 52, 0))
+  
+  # 2. Create Age Groups
+  # Bins: 0-14, 15-24, 25-34, 35-44, 45-54, 55-64, 65+
+  # Python cut(right=False) means intervals are [a, b). 
+  # R cut(right=FALSE) achieves the same.
+  bins <- c(0, 15, 25, 35, 45, 55, 65, 150)
+  labels <- c('0-14', '15-24', '25-34', '35-44', '45-54', '55-64', '65+')
+  
+  df$age_group <- cut(df$age, breaks = bins, labels = labels, right = FALSE)
+  
+  # 3. Create Household Market Income Per Week
+  # Sums weekly income for everyone with the same household_id
+  # Python's transform('sum') broadcasts the sum to all rows in the group
+  df <- df %>%
+    group_by(household_id) %>%
+    mutate(household_market_income_per_week = sum(market_income_per_week, na.rm = TRUE)) %>%
+    ungroup()
+  
+  # 4. Create Market Income Per Hour
+  # Handle division by zero for non-workers
+  # Using vectorized ifelse instead of apply/lambda for performance in R
+  df$market_income_per_hour <- ifelse(
+    df$working_hours > EPSILON + 1.0,
+    df$market_income_per_week / df$working_hours,
+    EPSILON
+  )
+  
+  # 5. Helper Columns 
+  # 'hours_mean' appears to be a direct copy of working_hours in your target schema
+  df$hours_mean <- df$working_hours
+  df$selected <- TRUE
+  
+  # 6. Select and Order Columns
+  target_cols <- c(
+    'household_id', 'id', 'age', 'gender', 'market_income_per_week', 
+    'working_hours', 'age_group', 'hours_mean', 
+    'household_market_income_per_week', 'market_income_per_hour', 'selected'
+  )
+  
+  # Return only the columns requested
+  return(df[, target_cols])
+}
+
+
+simulation_sample_heckman <- function(df_input, weeks_per_year = 52) {
+  # Note: The calculation implies market_income is the total income over the period,
+  # and we are deriving an hourly rate (or weekly rate per hour unit) depending on interpretation,
+  # but strictly following the Python arithmetic:
+
+  df_input$market_income_per_week <- df_input$market_income / (
+    df_input$working_hours * weeks_per_year
+  )
+  df_input$market_income_per_week[df_input$working_hours < EPSILON + 0.1] <- EPSILON
+
+  
+  return(df_input[, c("id", "age", "gender", "education_level", "market_income_per_week", "employed")])
 }

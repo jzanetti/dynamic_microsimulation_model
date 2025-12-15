@@ -1,199 +1,91 @@
 
+run_ruf_model <- function(df_input, cfg, recreate_data) {
+  
+  # Construct input_params list from the nested cfg object
+  # Python's None becomes NULL in R
+  # Python's True becomes TRUE in R
+  input_params <- list(
+    total_hours = cfg$behaviour_model$employment$ruf$total_hrs,
+    min_hourly_wage = cfg$behaviour_model$employment$ruf$min_hourly_wage,
+    leisure_value = cfg$behaviour_model$employment$ruf$leisure_value,
+    exclude_seniors = TRUE,
+    hours_options = cfg$behaviour_model$employment$ruf$possible_working_hrs,
+    apply_household_income_filter = list(min = 0.1, max = 0.7),
+    apply_earner_type_filter = NULL,
+    apply_household_size_filter = NULL
+  )
+  
+  output_dir <- cfg$output_dirs$models
 
-run_utility_func_model_fit <- function(df_input, 
-                                       output_dir, 
-                                       proc_ages, 
-                                       hours_options, 
-                                       total_hours) {
+  # model_validation_env$run_ruf_validation(input_params, output_dir = output_dir)
+  # Call the utility function
+  # Note: 'income_name' was a dict in Python, so it becomes a named list in R
+  model_ruf_env$utility_func(
+    df_input = df_input,
+    params = input_params,
+    income_name = list(market = "market_income_per_hour"),
+    working_hours_name = "working_hours",
+    output_dir = output_dir,
+    recreate_data = recreate_data
+  )
   
-  # 1. Format the 'proc_ages' string (handles vector inputs like c("18", "25"))
-  ages_label <- paste(proc_ages, collapse = "-")
-  
-  print(paste("Utility model for", ages_label))
-  
-  # 2. Construct file path
-  # Note: using .rds extension instead of .pkl
-  filename <- paste0("utility_params_", ages_label, ".rds")
-  model_outputpath <- file.path(output_dir, filename)
-  
-  # 3. Run the model
-  # This assumes the 'utility_func' defined in the previous step returns 
-  # a list containing both 'params' and 'validation'
-  results_obj <- model_ruf_env$utility_func(df_input, hours_options, total_hours)
-  
-  # 4. Save to disk
-  # saveRDS is the R equivalent of pickle.dump for single objects
-  saveRDS(results_obj, file = model_outputpath)
-  
-  print(paste("Saved model results to:", model_outputpath))
+  # Run validation (calls the function we defined in the previous step)
+  model_validation_env$run_ruf_validation(input_params, output_dir = output_dir)
 }
 
-
-run_heckman_wage_model <- function(pop_data, cfg, heckman_age_group) {
+run_heckman_wage_model <- function(pop_data, cfg) {
   
-  # 1. Deep Copy
-  # In R, standard data.frames use "copy-on-modify". 
-  # Assigning to a new variable is sufficient to create a separate working copy 
-  # as soon as you modify it.
+  # R is "copy-on-modify", so a simple assignment acts as a deep copy
+  # for standard data frames.
   pop_data_input <- pop_data
   
-  employment_cfg <- cfg$behaviour_model$employment
+  heckman_cfg <- cfg$behaviour_model$employment$heckman
   
-  # 2. Identify Categorical Columns
-  # Intersect global cat_cols with the specific predictors used here
-  combined_predictors <- c(employment_cfg$predictors$selection, 
-                           employment_cfg$predictors$outcome)
-  
-  cal_cols <- intersect(cfg$cat_cols, combined_predictors)
-  
-  print(paste("Identified categorical features are:", paste(cal_cols, collapse=", "), 
-                 "and start one-shot preprocessing ..."))
-  
-  # 3. Preprocessing
-  # Assumes 'preprocess_data' returns a list with elements: $data (df) and $map (list)
-  # You will need to ensure your R version of preprocess_data matches this structure.
-  pre_res <- model_utils_env$preprocess_data(pop_data_input, cal_cols, reference_groups = NULL)
-  pop_data_input <- pre_res$df_encoded
-  cal_cols_map <- pre_res$new_cols_map
-  
-  # 4. Expand Predictors (Map categorical vars to their One-Hot columns)
-  heckman_model_predictors <- list(selection = c(), outcome = c())
-  
-  # Iterate over 'selection' and 'outcome' types
-  for (proc_pred_type in names(heckman_model_predictors)) {
-    
-    # Get original list of variables from config
-    raw_vars <- employment_cfg$predictors[[proc_pred_type]]
-    
-    for (proc_var in raw_vars) {
-      if (proc_var %in% cal_cols) {
-        # Extend the list with the mapped dummy column names
-        # unlist is used to ensure we are adding a flat vector of names
-        mapped_cols <- unlist(cal_cols_map[[proc_var]])
-        heckman_model_predictors[[proc_pred_type]] <- c(heckman_model_predictors[[proc_pred_type]], mapped_cols)
-      } else {
-        # Keep the original numeric variable
-        heckman_model_predictors[[proc_pred_type]] <- c(heckman_model_predictors[[proc_pred_type]], proc_var)
-      }
-    }
-  }
-  
-  print(paste("Heckman model for", heckman_age_group))
-  
-  # 5. Define Output Path
-  # Using .rds for R binary files instead of .pkl
-  filename <- paste0("model_heckman_wage_", heckman_age_group, ".rds")
-  model_outputpath <- file.path(cfg$output_dirs$models, filename)
-  
-  # Split age group string (if needed for logic inside the model function)
-  heckman_age_parts <- unlist(strsplit(heckman_age_group, "-"))
-  
-  # 6. Run the Model
-  # Assumes heckman_wage_model is defined in your R environment
-  results <- model_heckman_wage_env$heckman_wage_model(
-    pop_data_input,
-    selection_col = "employed",
-    outcome_col = "market_income_per_week",
-    select_exog = heckman_model_predictors$selection,
-    outcome_exog = heckman_model_predictors$outcome
-  )
-  
-  # 7. Save Results
-  saveRDS(results, file = model_outputpath)
-  
-  # Return is implicit or can be explicit. 
-  # The Python version didn't return pop_data, so we don't here either.
-}
-
-run_heckman_wage_model2 <- function(pop_data,
-                                   cfg,
-                                   heckman_age_groups = c("0-18", "18-65", "65-999")) {
-  
-  employment_cfg <- cfg$behaviour_model$employment
-  
-  # R: intersect() performs set intersection
-  predictors_union <- c(employment_cfg$predictors$selection,
-                        employment_cfg$predictors$outcome)
-  
-  cal_cols <- intersect(cfg$cat_cols, unique(predictors_union))
-  print(paste0("Identified categoriec features as", 
-               paste(cal_cols, collapse = ", "), 
-               ", and start one-shot preprocessing ..."))
-  
-  
-  # Call preprocess_data (returns a list with $df_encoded and $new_cols_map based on previous conversion)
-  pre_res <- model_utils_env$preprocess_data(pop_data, cal_cols, reference_groups = NULL)
-  pop_data_input <- pre_res$df_encoded
-  cal_cols_map <- pre_res$new_cols_map
-  
-  # Python: heckman_model_predictors = {"selection": [], "outcome": []}
-  heckman_model_predictors <- list(selection = character(), outcome = character())
-  
-  for (proc_pred_type in names(heckman_model_predictors)) {
-    # Get original list from config
-    raw_preds <- employment_cfg$predictors[[proc_pred_type]]
-    
-    for (proc_var in raw_preds) {
-      if (proc_var %in% cal_cols) {
-        # Python: extend(cal_cols_map[proc_var])
-        heckman_model_predictors[[proc_pred_type]] <- c(
-          heckman_model_predictors[[proc_pred_type]], 
-          cal_cols_map[[proc_var]]
-        )
-      } else {
-        # Python: append(proc_var)
-        heckman_model_predictors[[proc_pred_type]] <- c(
-          heckman_model_predictors[[proc_pred_type]], 
-          proc_var
-        )
-      }
-    }
-  }
+  # Identify categorical columns needed for this specific model
+  # Intersect finds common elements between two vectors
+  required_vars <- unique(c(heckman_cfg$selection, heckman_cfg$outcome))
+  cal_cols <- intersect(cfg$cat_cols, required_vars)
   
   print(
-    sprintf("Due to different wage behaviours, the heckman model run over different age groups %s", 
-            paste(heckman_age_groups, collapse = ", "))
+    paste0("Identified categorical features are: ",
+    paste(cal_cols, collapse = ", "))
   )
   
-  all_data <- list()
-  
-  for (proc_ages_str in heckman_age_groups) {
-    print(paste("Heckman model for", proc_ages_str))
+  # --- Step 1: Preprocessing ---
+  # Unlike Python, we do NOT manually expand dummies here.
+  # We just convert them to factors. R's formula system handles the expansion.
+  for (col in cal_cols) {
+    pop_data_input[[col]] <- as.factor(pop_data_input[[col]])
     
-    # Construct path
-    # Changing extension to .rds for R standard
-    model_outputpath <- file.path(
-      cfg$output_dirs$models,
-      paste0("model_heckman_wage_", proc_ages_str, ".rds")
-    )
-    
-    # Split "18-65" -> c("18", "65")
-    proc_ages_vec <- unlist(str_split(proc_ages_str, "-"))
-    min_age <- as.integer(proc_ages_vec[1])
-    max_age <- as.integer(proc_ages_vec[2])
-    
-    # Filter data
-    proc_data_input_subset <- pop_data_input %>%
-      filter(age >= min_age & age < max_age)
-    
-    # Run Model
-    # Note: heckman_wage_model returns the DF with predictions added
-    model_results <- model_heckman_wage_env$heckman_wage_model(
-      df = proc_data_input_subset,
-      selection_col = "employed",
-      outcome_col = "market_income",
-      select_exog = heckman_model_predictors$selection,
-      outcome_exog = heckman_model_predictors$outcome
-    )
-    
-    saveRDS(
-      list(selection = model_results$selection, 
-           outcome = model_results$outcome, 
-           data = model_results$data),
-      file = model_outputpath
-    )
+    # NOTE: If you defined specific reference groups in Python, 
+    # use relevel() here. E.g.:
+    # pop_data_input[[col]] <- relevel(pop_data_input[[col]], ref = "SomeGroup")
   }
   
+  # --- Step 2: Define Predictors ---
+  # In R, we pass the raw column names (e.g., "education"), NOT the 
+  # expanded dummy names (e.g., "education_High", "education_Low").
+  selection_predictors <- heckman_cfg$selection
+  outcome_predictors <- heckman_cfg$outcome
+  
+  # Construct output path using file.path (handles slashes automatically)
+  model_outputpath <- file.path(cfg$output_dirs$models, "model_heckman_wage.rds")
+  
+  # --- Step 3: Run Model ---
+  # Uses the helper function defined in the previous step
+  results <- model_heckman_wage_env$heckman_wage_model(
+    df = pop_data_input,
+    selection_col = "employed",
+    outcome_col = "market_income_per_week",
+    select_exog = selection_predictors,
+    outcome_exog = outcome_predictors
+  )
+  
+  # --- Step 4: Save Results ---
+  # saveRDS is the R equivalent of pickle for single objects
+  saveRDS(results, file = model_outputpath)
+  
+  return(results)
 }
 
 run_model <- function(

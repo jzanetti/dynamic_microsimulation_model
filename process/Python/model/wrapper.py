@@ -9,45 +9,56 @@ from process.Python.model.linear import linear_model
 from process.Python.model.utils import preprocess_data
 from process.Python.model.heckman_wage import heckman_wage_model
 from process.Python.model.random_utlity_function import utility_func
+from process.Python.model.validation import run_ruf_validation
 
 logger = getLogger()
 
-
-def run_utility_func_model_fit(
+def run_ruf_model(
     df_input: DataFrame,
-    output_dir: dict,
-    proc_ages: str,
-    hours_options: list,
-    total_hours: float,
-):
+    cfg: dict,
+    recreate_data: bool = True):
 
-    logger.info(f"Utility model for {proc_ages}")
+    input_params = {
+        "total_hours": cfg["behaviour_model"]["employment"]["ruf"]["total_hrs"],
+        "min_hourly_wage": cfg["behaviour_model"]["employment"]["ruf"]["min_hourly_wage"],
+        "leisure_value": cfg["behaviour_model"]["employment"]["ruf"]["leisure_value"],
+        "exclude_seniors": True,
+        "hours_options": cfg["behaviour_model"]["employment"]["ruf"]["possible_working_hrs"],
+        "apply_household_income_filter": {"min": 0.1, "max": 0.7},
+        "apply_earner_type_filter": None, 
+        "apply_household_size_filter": None
+    }
 
-    model_outputpath = f"{output_dir}/utility_params_{"-".join(proc_ages)}.pkl"
+    output_dir = f"{cfg["output_dirs"]["models"]}"
 
-    results, validation = utility_func(df_input, hours_options, total_hours)
 
-    pickle_dump(
-        {"params": results, "validation": validation},
-        open(model_outputpath, "wb"),
+    utility_func(
+        df_input,
+        input_params,
+        income_name={"market": "market_income_per_hour"},
+        working_hours_name="working_hours",
+        output_dir = output_dir,
+        recreate_data = recreate_data
     )
+
+
+    run_ruf_validation(input_params, output_dir=output_dir)
 
 
 def run_heckman_wage_model(
     pop_data: DataFrame,
-    cfg: dict,
-    heckman_age_group: str,
+    cfg: dict
 ) -> DataFrame:
 
     pop_data_input = deepcopy(pop_data)
 
-    employment_cfg = cfg["behaviour_model"]["employment"]
+    heckman_cfg = cfg["behaviour_model"]["employment"]["heckman"]
 
     cal_cols = list(
         set(cfg["cat_cols"])
         & set(
-            employment_cfg["predictors"]["selection"]
-            + employment_cfg["predictors"]["outcome"]
+            heckman_cfg["selection"]
+            + heckman_cfg["outcome"]
         )
     )
 
@@ -60,19 +71,15 @@ def run_heckman_wage_model(
 
     heckman_model_predictors = {"selection": [], "outcome": []}
     for proc_pred_type in heckman_model_predictors:
-        for proc_var in employment_cfg["predictors"][proc_pred_type]:
+        for proc_var in heckman_cfg[proc_pred_type]:
             if proc_var in cal_cols:
                 heckman_model_predictors[proc_pred_type].extend(cal_cols_map[proc_var])
             else:
                 heckman_model_predictors[proc_pred_type].append(proc_var)
 
-    logger.info(f"Heckman model for {heckman_age_group}")
-
     model_outputpath = (
-        f"{cfg["output_dirs"]["models"]}/model_heckman_wage_{heckman_age_group}.pkl"
+        f"{cfg["output_dirs"]["models"]}/model_heckman_wage.pkl"
     )
-
-    heckman_age_group = heckman_age_group.split("-")
 
     results = heckman_wage_model(
         pop_data_input,

@@ -147,11 +147,17 @@ def generate_sample_supplements(required_data_types: list = ["mortality"]):
     if "mortality" in required_data_types:
         mortality_data = simulation_sample_mortality(pop_data)
         mortality_data_path = f"{SAMPLE_DATA_DIR}/mortality_data.parquet"
-
-        if not exists(SAMPLE_DATA_DIR):
-            makedirs(SAMPLE_DATA_DIR)
         pq_write_table(pa.Table.from_pandas(mortality_data), mortality_data_path)
 
+    if "ruf" in required_data_types:
+        ruf_data = simulation_sample_ruf(pop_data)
+        ruf_data_path = f"{SAMPLE_DATA_DIR}/ruf_data.parquet"
+        pq_write_table(pa.Table.from_pandas(ruf_data), ruf_data_path)
+
+    if "heckman" in required_data_types:
+        heckman_data = simulation_sample_heckman(pop_data)
+        heckman_data_path = f"{SAMPLE_DATA_DIR}/heckman_data.parquet"
+        pq_write_table(pa.Table.from_pandas(heckman_data), heckman_data_path)
 
 def obtain_employment_status(df, params):
     df = df.copy()
@@ -448,3 +454,66 @@ def obtain_working_hours(df: DataFrame):
     pop_merged.loc[pop_merged["working_hours"] == 0, "working_hours"] = EPLISON
 
     return pop_merged
+
+
+
+def simulation_sample_ruf(df_input):
+    """
+    Transforms raw household census/survey data into the specific format 
+    required for the dashboard/model.
+    
+    Args:
+        df_input (pd.DataFrame): The raw dataframe containing 'id', 'household_id', 
+                                 'age', 'market_income', 'working_hours', etc.
+                                 
+    Returns:
+        pd.DataFrame: A dataframe with calculated weekly incomes, age groups, 
+                      and household aggregates.
+    """
+    # Create a copy to avoid SettingWithCopy warnings on the original df
+    df = df_input.copy()
+    
+    # 1. Calculate Market Income Per Week
+    # Assumption: Input 'market_income' is Annual. 
+    # If input is already weekly, remove the `/ 52`.
+    df['market_income_per_week'] = (df['market_income'] / 52).round(0).astype(int)
+
+    # 2. Create Age Groups
+    # Bins: 0-14, 15-24, 25-34, 35-44, 45-54, 55-64, 65+
+    bins = [0, 15, 25, 35, 45, 55, 65, 150]
+    labels = ['0-14', '15-24', '25-34', '35-44', '45-54', '55-64', '65+']
+    df['age_group'] = cut(df['age'], bins=bins, labels=labels, right=False)
+
+    # 3. Create Household Market Income Per Week
+    # Sums weekly income for everyone with the same household_id
+    df['household_market_income_per_week'] = df.groupby('household_id')['market_income_per_week'].transform('sum')
+
+    # 4. Create Market Income Per Hour
+    # Handle division by zero for non-workers
+    df['market_income_per_hour'] = df.apply(
+        lambda x: x['market_income_per_week'] / x['working_hours'] if x['working_hours'] > 0 else 0.0, 
+        axis=1
+    )
+    
+    # 5. Helper Columns 
+    # 'hours_mean' appears to be a direct copy of working_hours in your target schema
+    df['hours_mean'] = df['working_hours']
+    df['selected'] = True
+
+    # 6. Select and Order Columns
+    target_cols = [
+        'household_id', 'id', 'age', 'gender', 'market_income_per_week', 
+        'working_hours', 'age_group', 'hours_mean', 
+        'household_market_income_per_week', 'market_income_per_hour', 'selected'
+    ]
+    
+    # Return only the columns requested
+    return df[target_cols]
+
+
+def simulation_sample_heckman(df_input, weeks_per_year: int = 52):
+    df_input["market_income_per_week"] = df_input["market_income"] / (
+        df_input["working_hours"] * weeks_per_year
+    )
+
+    return df_input[["id", "age", "gender", "education_level", "market_income_per_week", "employed"]]

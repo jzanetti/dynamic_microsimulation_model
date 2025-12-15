@@ -1,0 +1,125 @@
+
+
+from process.Python.data.sample import obtain_working_hours
+from pandas import DataFrame, Series
+from pandas import DataFrame
+from numpy import where
+
+def tawa_data_preprocess(
+    df: DataFrame, 
+    hours_options: list = [0, 20, 40],
+    min_hourly_wage:float = 23.0, 
+    exclude_seniors: bool =False,
+    income_types: list = [
+        "P_Income_SelfEmployed",
+        "P_Income_WageSalary"
+    ],
+    apply_earner_type_filter: str or None = None,
+    apply_household_income_filter: dict or None = {
+        "min": 0.3, "max": 0.7
+    },
+    apply_household_size_filter: dict or None = {
+        "H_Counts_Adults": [2, 2],
+        "H_Counts_DependentKids": [1, 3]
+    }
+):
+    
+    # ---------------------------------------------
+    # Step 1: Apply household filter
+    # ---------------------------------------------
+    if apply_household_size_filter is not None:
+        mask = Series(True, index=df.index)
+        for col, (min_val, max_val) in apply_household_size_filter.items():
+            mask = mask & df[col].between(min_val, max_val)
+        df = df[mask]
+
+    if exclude_seniors:
+        df = df[df.groupby("snz_hes_hhld_uid")["P_Attributes_Age"].transform("min") < 65]
+
+    # ---------------------------------------------
+    # Step 2: Apply Person filter (only people over 18 will be considered)
+    # ---------------------------------------------
+    df = df[df["P_Attributes_Age"] > 18]
+
+    # ---------------------------------------------
+    # Step 3:Rename the data
+    # ---------------------------------------------
+    df['P_Total_income'] = df[income_types].sum(axis=1)
+
+    df = df.rename(
+        columns={
+            "snz_hes_hhld_uid": "household_id",
+            "snz_hes_uid": "id",
+            "P_Attributes_Age": "age",
+            "P_Attributes_Sex": "gender",
+            "P_Total_income": "market_income_per_week",
+            "P_Job_TotalHoursPerWeek": "working_hours",
+        }
+    )[
+        [
+            "household_id",
+            "id",
+            "age",
+            "gender",
+            "market_income_per_week",
+            "working_hours",
+        ]
+    ]
+    df["gender"] = where(df["gender"] == 1, "Male", "Female")
+    
+    # ---------------------------------------------
+    # Step 4: Obtain working hours
+    # ---------------------------------------------
+    df = obtain_working_hours(df)
+    df["working_hours"] = where(
+        df["working_hours"] < hours_options[1],
+        1e-9,
+        df["working_hours"],
+    )
+
+    # ---------------------------------------------
+    # Step 5: Data quality control
+    # ---------------------------------------------
+    # 5.1: Remove outlier households 
+    if apply_household_income_filter is not None:
+        df["household_market_income_per_week"] = df.groupby("household_id")[
+            "market_income_per_week"
+        ].transform("sum")
+
+        thres_min = df['household_market_income_per_week'].quantile(
+            apply_household_income_filter["min"])
+        thres_max = df['household_market_income_per_week'].quantile(
+            apply_household_income_filter["max"])
+        df = df[
+            (df["household_market_income_per_week"] >= thres_min)
+            & (df["household_market_income_per_week"] <= thres_max)
+        ]
+
+    # 5.2: Correct wage for people who are not working (here
+    #      we use minimum wage)
+    df["market_income_per_hour"] = where(
+        df["working_hours"] == 1e-9,
+        min_hourly_wage,
+        df["market_income_per_week"] / df["working_hours"],
+    )
+
+    # ---------------------------------------------
+    # Step 6: Obtain primary/secondary earner
+    # ---------------------------------------------
+    if apply_earner_type_filter is not None:
+        df = df.sort_values(
+            ["household_id", "market_income_per_week"], ascending=[True, False]
+        )
+
+        if apply_earner_type_filter.lower() == "primary":
+            df_primary = df.groupby("household_id").nth(0).reset_index()
+            selected_id = df_primary["id"].unique()
+        elif apply_earner_type_filter.lower() == "secondary":
+            df_secondary = df.groupby("household_id").nth(1).reset_index()
+            selected_id = df_secondary["id"].unique()
+
+        df['selected'] = where(df['id'].isin(selected_id), True, False)
+    else:
+        df['selected'] = True
+
+    return df

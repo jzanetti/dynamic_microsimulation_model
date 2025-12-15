@@ -1,6 +1,5 @@
 from pandas import DataFrame
 from process.Python.model.wrapper import run_heckman_wage_model
-from process.Python.model.wrapper import run_utility_func_model_fit
 import statsmodels.api as sm
 from pandas import concat
 from logging import getLogger
@@ -9,93 +8,50 @@ from pickle import load as pickle_load
 from itertools import product as iter_prod
 from numpy.random import choice as np_choice
 from process.Python.data import EPLISON
+from process.Python.model.random_utlity_function import utility_func
+from process.Python.model.validation import run_ruf_validation
+from copy import deepcopy
 
 logger = getLogger()
 
 
 def forward(
     pop_data: DataFrame,
-    cfg: dict,
-    weeks_per_year: int = 50,
-    utility_age_groups: list = ["18-65"],
-    run_utility_func: bool = False,
+    cfg: dict
 ):
-
-    # pop_data["employed"] = (pop_data["market_income"] > 0).astype(float)
-    # pop_data["latent_working_hours"] = pop_data["working_hours"]
-    # pop_data.loc[pop_data["employed"] == False, "working_hours"] = EPLISON
-    pop_data["market_income_per_week"] = pop_data["market_income"] / (
-        pop_data["working_hours"] * weeks_per_year
-    )
-    possible_working_hrs = []
-    for proc_hr in cfg["behaviour_model"]["employment"]["possible_working_hrs"]:
-        if proc_hr == 0.0:
-            proc_hr = EPLISON
-        possible_working_hrs.append(proc_hr)
-
-    # ------------------------
-    # Run Heckman model and Utility function
-    # ------------------------
-    for proc_age_group in utility_age_groups:
-
-        proc_age_group_range = proc_age_group.split("-")
-        proc_data = pop_data[
-            (pop_data["age"] >= int(proc_age_group_range[0]))
-            & (pop_data["age"] < int(proc_age_group_range[1]))
-        ]
-
-        pop_data = run_heckman_model(proc_data, cfg, proc_age_group)
-
-        if run_utility_func:
-            run_utility(
-                pop_data,
-                proc_age_group,
-                cfg["output_dirs"]["models"],
-                hours_options=possible_working_hrs,
-                total_hours=cfg["behaviour_model"]["employment"]["total_hrs"],
-            )
-
+    pop_data = run_heckman_model(pop_data, cfg)
+    pop_data = run_ruf(pop_data, cfg)
     return pop_data
 
 
-def run_utility(
-    pop_data: DataFrame,
-    utility_age_group: str,
-    output_dir: str,
-    hours_options: list,
-    total_hours: float = 80.0,
-):
-
-    proc_ages = utility_age_group.split("-")
-
-    run_utility_func_model_fit(
-        pop_data, output_dir, proc_ages, hours_options, total_hours
-    )
+def run_ruf(pop_data: DataFrame, cfg: dict):
+    return pop_data
 
 
-def run_heckman_model(pop_data: DataFrame, cfg: dict, proc_age_group: str) -> DataFrame:
-
-    run_heckman_wage_model(pop_data, cfg, heckman_age_group=proc_age_group)
+def run_heckman_model(pop_data: DataFrame, cfg: dict) -> DataFrame:
 
     updated_results = run_heckman_wage_model_prediction(
-        cfg["output_dirs"]["models"], proc_age_group
+        pop_data, cfg["output_dirs"]["models"]
     )
 
-    if "latent_market_income_per_week" in pop_data:
-        pop_data = pop_data.drop(
-            columns=["latent_market_income_per_week"], errors="ignore"
-        )
+    income_keys = ["market_income_per_week", "latent_market_income_per_week"]
+
+    for proc_key in income_keys:
+        if proc_key in pop_data:
+            pop_data = pop_data.drop(
+                columns=[proc_key], errors="ignore"
+            )
 
     pop_data = pop_data.merge(
-        updated_results[["id", "latent_market_income_per_week"]], on="id", how="left"
+        updated_results[["id"] + income_keys], on="id", how="left"
     )
 
     return pop_data
 
 
-def run_heckman_wage_model_prediction(data_dir, proc_age_group):
+def run_heckman_wage_model_prediction(pop_data, data_dir):
 
-    model_outputpath = join(data_dir, f"model_heckman_wage_{proc_age_group}.pkl")
+    model_outputpath = join(data_dir, f"model_heckman_wage.pkl")
     models = pickle_load(open(model_outputpath, "rb"))
     all_data = models["data"]
     X_outcome_all = all_data[models["outcome_exog"] + ["imr"]]

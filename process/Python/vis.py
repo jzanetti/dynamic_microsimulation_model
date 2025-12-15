@@ -9,42 +9,65 @@ from matplotlib.pyplot import (
     grid,
     xlabel,
     ylabel,
+    axvline,
+    axhline,
+    gca
 )
+import matplotlib.ticker as mtick
 from matplotlib.ticker import MaxNLocator
 import base64
 from io import BytesIO
 import math
 from os.path import exists
-
+from process.Python.data.filename import create_hash_filename
 from os import makedirs
 from pandas import DataFrame
 from os.path import join
+from pandas import read_csv
 
 
-def plot_intermediate(data_to_plot, data_name: str, output_dir: str = "/tmp"):
+def plot_intermediate(input_params: dict, data_name: str, output_dir: str = "/tmp"):
 
     if data_name == "utility_func":
-        output_path = join(output_dir, "utility_employment_rate.png")
+
+        filename_hash = create_hash_filename(input_params)
+        output_path1 = join(output_dir, f"utility_employment_rate_{filename_hash}.png")
+        output_path2 = join(output_dir, f"ruf_total_employment_hrs_{filename_hash}.png")
+
+        sensitivity_results = read_csv(f"{output_dir}/sensitivity_tests_{filename_hash}.csv")
+        accuacry_results = read_csv(f"{output_dir}/validation_score_{filename_hash}.csv")
+
+        highest_utility_accuracy = accuacry_results[accuacry_results["scores"] == "highest_utility_accuracy"]["value"].values[0]
+        total_hrs_accuracy = accuacry_results[accuacry_results["scores"] == "total_hrs_accuracy"]["value"].values[0]
+        accuacry_score_str = f"Total Utility Accuracy: " + \
+            f"{round(highest_utility_accuracy, 2)} %, " + \
+            "Total Hours Accuracy: " + \
+            f"{round(total_hrs_accuracy, 2)} %; "
+
         subplots(figsize=(10, 6))
-        plot(data_to_plot["scaler"], data_to_plot["full_time"], label="full_time")
-        plot(data_to_plot["scaler"], data_to_plot["part_time"], label="part_time")
+        plot(sensitivity_results["scaler"], sensitivity_results["full_time"], label=f"Full-time (Working hours >= {input_params["hours_options"][-1]}hr)")
+        plot(sensitivity_results["scaler"], sensitivity_results["part_time"], label=f"Part-time (Working hours >= {input_params["hours_options"][1]}hr, < {input_params["hours_options"][-1]}hr)")
+        axvline(x=1.0, color='r', linestyle='--')
+        axhline(y=1.0, color='b', linestyle='--')
+        gca().yaxis.set_major_formatter(mtick.PercentFormatter(xmax=1.0))
         legend()
-        title("Employment behaviours with Random Utility Function")
+        title(f"Employment behaviours with Random Utility Function \n {accuacry_score_str}")
         xlabel("Income Scaler")
         ylabel("Employment rate")
-        savefig(output_path, bbox_inches="tight")
+        savefig(output_path1, bbox_inches="tight")
         close()
 
-        output_path = join(output_dir, "utility_employment_hrs.png")
         subplots(figsize=(10, 6))
-        plot(data_to_plot["scaler"], data_to_plot["total_employment_hrs"])
-        legend()
+        plot(sensitivity_results["scaler"], sensitivity_results["total_employment_hrs"])
+        axvline(x=1.0, color='r', linestyle='--')
+        axhline(y=1.0, color='b', linestyle='--')
+        gca().yaxis.set_major_formatter(mtick.PercentFormatter(xmax=1.0))
         title(
-            "Employment behaviours with Random Utility Function \n Total employment hours"
+            f"Employment behaviours with Random Utility Function \n {accuacry_score_str}"
         )
         xlabel("Income Scaler")
         ylabel("Employment hours")
-        savefig(output_path, bbox_inches="tight")
+        savefig(output_path2, bbox_inches="tight")
         close()
 
 

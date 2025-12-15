@@ -5,3 +5,6 @@ basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",  # Custom format
     handlers=[StreamHandler()],  # Output to console
 )
+
+
+TEST_RUN = False

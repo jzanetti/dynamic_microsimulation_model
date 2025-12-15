@@ -12,3 +12,7 @@ outputs/
 dynamic_microsimulation_model.Rproj
 etc/sample
 etc/app/Synthetic-HES23-single-period.csv
+site-packages
+etc/app/*.png
+etc/app/*.csv
+etc/app/*.parquet

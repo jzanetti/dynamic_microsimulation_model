@@ -1,125 +1,58 @@
 from pandas import DataFrame
-import statsmodels.api as sm
-import statsmodels.api as sm
-from copy import deepcopy
-from numpy import array as np_array
-from numpy import max as np_max
 from numpy import exp as np_exp
 from numpy import sum as np_sum
-from numpy import abs as np_abs
 from numpy import exp as np_exp
 from numpy import log as np_log
-from numpy import where as np_where
 from scipy.optimize import minimize as scipy_minimize
 from logging import getLogger
-from numpy import arange, mean
+from pyarrow.parquet import write_table as pq_write_table
+import pyarrow as pa
+from process.Python.data.input import prepare_ruf_inputs
+from pyarrow.parquet import read_table as pq_read_table
 
-from process.Python.vis import plot_intermediate
-import itertools
+
+from process.Python.data.filename import create_hash_filename
 
 logger = getLogger()
 
 
-def obtain_accuracy(data_to_check: DataFrame, params: dict):
-    scaled_income_hhld = data_to_check["income_hhld"]
-    scaled_income = data_to_check["income"]
-    scaled_leisure = data_to_check["leisure"]
+def predict(data: DataFrame, params: dict, method: str = "top30", scaler: float = 1.0):
+    scaled_income_hhld = data["income_hhld"] * scaler
+    scaled_income = data["income"] * scaler
+    scaled_leisure = data["leisure"]
 
-    data_to_check["utlity"] = (
+    data["utlity"] = (
         params["beta_income_hhld"] * scaled_income_hhld
         + params["beta_income_hhld2"] * (scaled_income_hhld**2)
         + params["beta_leisure"] * scaled_leisure
         + params["beta_leisure2"] * (scaled_leisure**2)
         + params["beta_interaction"] * (scaled_income * scaled_leisure)
-        + params["beta_interaction2"] * (scaled_income / scaled_income_hhld)
+        # + params["beta_interaction2"] * (scaled_income * scaled_income_hhld)
     )
-    predicted_choices = data_to_check.loc[
-        data_to_check.groupby("people_id")["utlity"].idxmax()
-    ]
+    if method == "top30":
+        # the threshold is top 30%
+        utility_thresholds = data.groupby("people_id")["utlity"].transform(lambda x: x.quantile(0.7))
+        predictions = data.loc[
+            data["utlity"] >= utility_thresholds]
+    else:
+        predictions = data.loc[
+            data.groupby("people_id")["utlity"].idxmax()]
 
-    pred_n = len(predicted_choices[predicted_choices["is_chosen"] == 1])
-    truth_n = len(data_to_check[data_to_check["is_chosen"] == 1])
+    return predictions
 
-    accuracy_ratio = pred_n / truth_n
-
-    return accuracy_ratio
-
-
-def results_validation(
-    data_to_check: DataFrame, params: dict, total_hours: int, hours_options: list
-):
-
-    results = {
-        "full_time": [],
-        "part_time": [],
-        "total_employment_hrs": [],
-        "scaler": arange(0.1, 2.0, 0.01),
-    }
-
-    leisure_time = [total_hours - x for x in hours_options]
-
-    for scaler in results["scaler"]:
-        scaled_income_hhld = data_to_check["income_hhld"] * scaler
-        scaled_income = data_to_check["income"] * scaler
-        scaled_leisure = data_to_check["leisure"]
-        # Create employment:
-        data_to_check["utlity"] = (
-            params["beta_income_hhld"] * scaled_income_hhld
-            + params["beta_income_hhld2"] * (scaled_income_hhld**2)
-            + params["beta_leisure"] * scaled_leisure
-            + params["beta_leisure2"] * (scaled_leisure**2)
-            + params["beta_interaction"] * (scaled_income * scaled_leisure)
-            + params["beta_interaction2"] * (scaled_income / scaled_income_hhld)
-        )
-        predicted_choices = data_to_check.loc[
-            data_to_check.groupby("people_id")["utlity"].idxmax()
-        ]
-
-        full_time_employment_rate = round(
-            len(predicted_choices[predicted_choices["leisure"] == min(leisure_time)])
-            / len(predicted_choices)
-            * 100,
-            2,
-        )
-        part_time_employment_rate = round(
-            len(
-                predicted_choices[
-                    (predicted_choices["leisure"] >= mean(leisure_time) - 1.0)
-                ]
-            )
-            / len(predicted_choices)
-            * 100,
-            2,
-        )
-        logger.info(
-            f"Predicted employment rate (full-time) {scaler}: {full_time_employment_rate} %"
-        )
-
-        logger.info(
-            f"Predicted employment rate (part-time) {scaler}: {part_time_employment_rate} %"
-        )
-
-        results["full_time"].append(full_time_employment_rate)
-        results["part_time"].append(part_time_employment_rate)
-        results["total_employment_hrs"].append(
-            sum(predicted_choices["option_hours"] * predicted_choices["is_chosen"])
-        )
-
-    plot_intermediate(results, "utility_func")
 
 
 def negative_log_likelihood(
     params,
     df,
-    options_n,
-    hours_values,
-    target_total_hours,
-    penalty_weight=0.5,
-    run_calibrate: bool = False,
+    options_n
 ):
     # 1. Calculate Utility for all rows
     V = quadratic_utility(
-        params, df["income"].values, df["income_hhld"].values, df["leisure"].values
+        params, 
+        df["income"].values, 
+        df["income_hhld"].values, 
+        df["leisure"].values
     )
 
     # 2. Reshape to (Num_People, 3_Options)
@@ -133,227 +66,106 @@ def negative_log_likelihood(
     sum_exp_V = exp_V.sum(axis=1, keepdims=True)
     probs = exp_V / sum_exp_V
 
-    if run_calibrate:
-        # --- CALIBRATION LOGIC STARTS ---
+    # 4. Get probability of the ACTUAL choice
+    # We use the 'is_chosen' mask
+    choice_mask = df["is_chosen"].values.reshape((n_people, options_n))
+    chosen_probs = probs[choice_mask == 1]
 
-        # 4. Calculate Total Expected Hours
-        # We assume 'hours_values' corresponds to the columns of V_matrix
-        # e.g., if options are [0, 20, 40], we broadcast this across probabilities
-        hours_array = np_array(hours_values)
-
-        # Dot product of probabilities and hours gives expected hours per person
-        expected_hours_person = np_sum(probs * hours_array, axis=1)
-
-        # Sum for the whole population
-        total_expected_hours = np_sum(expected_hours_person)
-
-        # Define Penalty (Squared Error)
-        calibration_penalty = (
-            penalty_weight * (total_expected_hours - target_total_hours) ** 2
-        )
-        # --- CALIBRATION LOGIC ENDS ---
-
-        # 5. Get probability of the ACTUAL choice (Standard MLE)
-        choice_mask = df["is_chosen"].values.reshape((n_people, options_n))
-        chosen_probs = probs[choice_mask == 1]
-
-        nll = -np_sum(np_log(chosen_probs + 1e-10))
-
-        # Return combined loss
-        return nll + calibration_penalty
-    else:
-        # 4. Get probability of the ACTUAL choice
-        # We use the 'is_chosen' mask
-        choice_mask = df["is_chosen"].values.reshape((n_people, options_n))
-        chosen_probs = probs[choice_mask == 1]
-
-        # 5. Sum Log Likelihoods
-        return -np_sum(np_log(chosen_probs + 1e-10))
+    # 5. Sum Log Likelihoods
+    return -np_sum(np_log(chosen_probs + 1e-10))
 
 
-def quadratic_utility(params, income, income_hhld, leisure):
+def quadratic_utility(params, income, income_hhld, leisure, show_debug = True):
     """
     Utility Function: U = b_c*C + b_c2*C^2 + b_l*L + b_l2*L^2 + b_cl*(C*L)
     """
-    b_hhld_i, b_hhld_i2, b_l, b_l2, b_cl, b_hi = params
+    b_hhld_i, b_hhld_i2, b_l, b_l2, b_cl, b_cl2 = params
 
     util = (
+        #b_hhld_i * income
+        #+ b_hhld_i2 * (income ** 2)
         b_hhld_i * income_hhld
         + b_hhld_i2 * (income_hhld**2)
         + b_l * leisure
         + b_l2 * (leisure**2)
         + b_cl * (income * leisure)
-        + b_hi * income / income_hhld
+        # + b_cl2 * (income * income_hhld)
+        # + 1.0 * (income * income_hhld)
     )
+
+    if show_debug:
+        debug_info = f"Total util {sum(util)}"
+        print(debug_info)
+
     return util
-
-
-def prepare_inputs(
-    df_input: DataFrame, hours_options: list, total_hours: int, income_name: str
-):
-
-    all_household_ids = df_input["household_id"].unique()
-    long_data = []
-    for index1, proc_hhld_id in enumerate(all_household_ids):
-
-        print(f"Processing input: {round(100 * index1 / len(all_household_ids), 3)}%")
-
-        proc_hhld = df_input[df_input["household_id"] == proc_hhld_id]
-
-        num_people = len(proc_hhld)
-        all_possible_hours_combination = list(
-            itertools.product(hours_options, repeat=num_people)
-        )
-
-        chosen_combination = min(
-            all_possible_hours_combination,
-            key=lambda c: sum(
-                (a - b) ** 2 for a, b in zip(c, list(proc_hhld["working_hours"].values))
-            ),
-        )
-
-        for proc_combination in all_possible_hours_combination:
-
-            is_chosen = 0
-            if proc_combination == chosen_combination:
-                is_chosen = 1
-
-            proc_data_list = []
-            proc_hhld_income = 0
-            for index2, proc_hours in enumerate(proc_combination):
-                proc_person = proc_hhld.iloc[index2]
-                person_wage = proc_person[income_name]
-                simulated_leisure = total_hours - proc_hours
-                if proc_hours > 0:
-                    gross_income_person = person_wage * proc_hours
-                else:
-                    gross_income_person = 0
-
-                proc_hhld_income += gross_income_person
-
-                proc_data_list.append(
-                    {
-                        "household_id": int(proc_hhld["household_id"].values[0]),
-                        "people_id": int(proc_person["id"]),
-                        "option_hours": proc_hours,
-                        "is_chosen": is_chosen,
-                        "income": gross_income_person,
-                        "leisure": simulated_leisure,
-                    }
-                )
-
-            for proc_data in proc_data_list:
-                if proc_hhld_income == 0:
-                    proc_hhld_income = 1e-9
-                proc_data["income_hhld"] = proc_hhld_income
-
-            long_data.extend(proc_data_list)
-
-    return DataFrame(long_data)
 
 
 def utility_func(
     df_input: DataFrame,
-    hours_options: list,
-    total_hours: float,
-    income_name: str = "disposable_income_per_week",
+    params: dict,
+    output_dir: str = "",
+    income_name: dict or None = {"market_income": "test"},
     working_hours_name: str = "working_hours",
     params_dict: dict = {
         "beta_income_hhld": {"initial": 1.0, "bound": (1e-6, None)},
-        "beta_income_hhld2": {"initial": -0.1, "bound": (None, -1e-6)},
+        "beta_income_hhld2": {"initial": -0.01, "bound": (None, -1e-6)},
         "beta_leisure": {"initial": 1.0, "bound": (1e-6, None)},
-        "beta_leisure2": {"initial": -1.0, "bound": (None, -1e-6)},
-        "beta_interaction": {"initial": 0.01, "bound": (None, None)},
-        "beta_interaction2": {"initial": 0.01, "bound": (None, None)},
+        "beta_leisure2": {"initial": -0.01, "bound": (None, -1e-6)},
+        "beta_interaction": {"initial": 1.0, "bound": (None, None)},
+        "beta_interaction2": {"initial": 1.0, "bound": (1.0, 1.0)}
     },
-    penalty_weight=1.0,
+    recreate_data: bool = True
 ):
 
-    # select relevant features
-    df_input = deepcopy(
-        df_input[
-            [
-                "id",
-                "household_id",
-                income_name,
-                working_hours_name,
-            ]
-        ]
-    )
+    hours_options = params["hours_options"]
+    total_hours = params["total_hours"]
+    leisure_value = params["leisure_value"]
 
-    proc_data = prepare_inputs(
-        df_input,
-        hours_options,
-        total_hours,
-        income_name,
-    )
+    filename_hash = create_hash_filename(params)
 
-    """
-    proc_data = proc_data.merge(
-        df_input[["household_id", income_names["hhld"]]].drop_duplicates(),
-        on="household_id",
-    )
+    data_output_path = f"{output_dir}/utility_func_data_{filename_hash}.parquet"
+    model_output_path = f'{output_dir}/utility_func_parameters_{filename_hash}.csv'
 
-    proc_data = proc_data.rename(columns={income_names["hhld"]: "income_hhld"})
-    """
-    scaler = (
-        proc_data[proc_data["is_chosen"] == 1]["income"].median()
-        / proc_data[proc_data["is_chosen"] == 1]["leisure"].median()
-    )
+    if recreate_data:
+        prepare_ruf_inputs(
+            df_input,
+            hours_options,
+            total_hours,
+            leisure_value,
+            income_name,
+            working_hours_name,
+            data_output_path=data_output_path
+        )
 
-    scaler = scaler * 1.0
-    # proc_data["leisure"] = proc_data["leisure"] * scaler
-    # auto_scaler_person = proc_data["income"].mean() / proc_data["leisure"].mean()
+    proc_data = pq_read_table(data_output_path)
+    proc_data = proc_data.to_pandas()
 
-    # proc_data["income"] = proc_data["income"] / auto_scaler_person
-    # proc_data["income_hhld"] = proc_data["income_hhld"] / auto_scaler_person
-
-    # proc_data["income_hhld"] = proc_data["income_hhld"]
     initial_guess = [v["initial"] for v in params_dict.values()]
     bounds = [v["bound"] for v in params_dict.values()]
 
-    calibration_target_hours = df_input[working_hours_name].sum()
-    proc_data["seq"] = proc_data.groupby("household_id").cumcount() + 1
-    wide_df = proc_data.pivot(
-        index="household_id",
-        columns="seq",
-        values=[
-            "people_id",
-            "option_hours",
-            "is_chosen",
-            "income",
-            "leisure",
-            "income_hhld",
-        ],
-    )
-    wide_df.columns = [f"{col}{seq}" for col, seq in wide_df.columns]
     result = scipy_minimize(
         fun=negative_log_likelihood,
         x0=initial_guess,
         args=(
             proc_data,
-            len(hours_options),
-            hours_options,  # <--- Passed for expected value calc
-            calibration_target_hours,  # <--- The target sum
-            penalty_weight,  # <--- The weight
-            False,
+            len(hours_options)
         ),
         method="L-BFGS-B",
         bounds=bounds,
+        options={'iprint': 1, 'eps': 1e-8} # Add this
     )
 
     result_params = {}
     for i, proc_param_var in enumerate(params_dict):
         result_params[proc_param_var] = result.x[i]
-        logger.info(f"{proc_param_var}: round({result_params[proc_param_var]}, 3)")
 
-    # Check predictions
-    logger.info("--- Model Check ---")
-    logger.info(f"Success: {result.success}")
-    logger.info(f"Message: {result.message}")
+    # Write outputs
+    results_params_df = df = DataFrame.from_dict(
+        result_params, orient='index', columns=['Value'])
+    results_params_df.index.name = 'parameter'
 
-    results_validation(proc_data, result_params, total_hours, hours_options)
+    logger.info(f"The model estimated paramaters are written to {model_output_path}")
+    df.to_csv(model_output_path)
 
-    accuacry = obtain_accuracy(proc_data, result_params)
-
-    print(accuacry)
+    # logger.info(f"The model training data are written to {data_output_path}")
+    # pq_write_table(pa.Table.from_pandas(proc_data), data_output_path)
