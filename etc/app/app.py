@@ -11,8 +11,6 @@ from process.Python.model.validation import run_ruf_validation, run_ruf_sensitiv
 from process.Python.data.tawa import tawa_data_preprocess
 from process.Python.data.filename import create_hash_filename
 
-FORCE_RERUN = False
-
 HH_SIZE_PRESETS = {
     "No Filter": None,
     "Single Adult (No Kids)": {
@@ -34,12 +32,12 @@ HH_SIZE_PRESETS = {
 }
 
 
-def load_and_process_model(input_params, hes_path="etc/app/Synthetic-HES23-single-period.csv", output_dir="etc/app"):
+def load_and_process_model(input_params, force_rerun=False, hes_path="etc/app/Synthetic-HES23-single-period.csv", output_dir="etc/app"):
     """
     Wraps the user's original main execution block.
     """
     filename_hash = create_hash_filename(input_params)
-    if FORCE_RERUN or (not os.path.exists(f"{output_dir}/sensitivity_tests_{filename_hash}.csv")):
+    if force_rerun or (not os.path.exists(f"{output_dir}/sensitivity_tests_{filename_hash}.csv")):
         # 1. Read Data
         hes_data = pd.read_csv(hes_path)
 
@@ -61,7 +59,7 @@ def load_and_process_model(input_params, hes_path="etc/app/Synthetic-HES23-singl
             income_name={"market": "market_income_per_hour"},
             working_hours_name="working_hours",
             output_dir=output_dir,
-            recreate_data=False
+            recreate_data=True
         )
 
         # 4. Validation & Sensitivity
@@ -192,15 +190,6 @@ app.layout = dbc.Container([
                     ], className="mb-2"),
 
                     html.Hr(),
-                    # Switches (Seniors)
-                    dbc.Checklist(
-                        options=[{"label": "Exclude Seniors", "value": True}],
-                        value=[True],
-                        id="input-exclude-seniors",
-                        switch=True,
-                        className="mb-3"
-                    ),
-
                     html.Label("Earner type:"),
                     dcc.Dropdown(
                         id='input-earner-type',
@@ -221,8 +210,21 @@ app.layout = dbc.Container([
                         className="mb-3"
                     ),
 
-                    html.Hr(),
+                    dbc.Checklist(
+                        options=[{"label": "Exclude Seniors (Seniors may have very different behaviours)", "value": True}],
+                        value=[True],
+                        id="input-exclude-seniors",
+                        switch=True,
+                        className="mb-3"
+                    ),
 
+                    html.Hr(),
+                    dbc.Switch(
+                        id="switch-force-rerun",
+                        label="Force Rerun (Ignore Cache)",
+                        value=False,
+                        className="mb-3 text-danger" # Added red text to indicate it's 'heavy'
+                    ),
                     # Buttons
                     dbc.Row([
                         dbc.Col(dbc.Button("Run Model", id="btn-run", color="primary", className="w-100"), width=8),
@@ -277,10 +279,11 @@ app.layout = dbc.Container([
      State('input-inc-max', 'value'),
      State('input-exclude-seniors', 'value'),
      State("input-earner-type", "value"),
-     State('input-hh-size', 'value')]
+     State('input-hh-size', 'value'),
+     State('switch-force-rerun', 'value')]
 )
 def update_model_and_store(
-    n_run, n_clear, current_history, wage, leisure, hours_opt_str, tot_hours, inc_min, inc_max, exclude_seniors, earner_type, hh_size_selection):
+    n_run, n_clear, current_history, wage, leisure, hours_opt_str, tot_hours, inc_min, inc_max, exclude_seniors, earner_type, hh_size_selection, force_rerun_val):
     trigger_id = ctx.triggered_id
 
     # 1. Handle Clear/Refresh
@@ -313,7 +316,7 @@ def update_model_and_store(
         }
 
         # Run Backend Logic
-        result = load_and_process_model(input_params)
+        result = load_and_process_model(input_params, force_rerun=force_rerun_val)
 
         if result['success']:
             # Append new result to history
