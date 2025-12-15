@@ -7,6 +7,7 @@ from scipy.optimize import minimize as scipy_minimize
 from logging import getLogger
 from process.Python.data.input import prepare_ruf_inputs
 from pyarrow.parquet import read_table as pq_read_table
+from os.path import exists
 
 
 from process.Python.data.filename import create_hash_filename
@@ -118,7 +119,7 @@ def utility_func(
     data_output_path = f"{output_dir}/utility_func_data_{filename_hash}.parquet"
     model_output_path = f'{output_dir}/utility_func_parameters_{filename_hash}.csv'
 
-    if recreate_data:
+    if recreate_data or (not exists(data_output_path)):
         prepare_ruf_inputs(
             df_input,
             hours_options,

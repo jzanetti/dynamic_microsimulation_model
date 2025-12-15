@@ -61,7 +61,7 @@ def load_and_process_model(input_params, hes_path="etc/app/Synthetic-HES23-singl
             income_name={"market": "market_income_per_hour"},
             working_hours_name="working_hours",
             output_dir=output_dir,
-            recreate_data=True
+            recreate_data=False
         )
 
         # 4. Validation & Sensitivity
@@ -136,6 +136,14 @@ app.layout = dbc.Container([
             "This portal is used to test the Employment Behaviour Model ~ Cached runs are instant, but new scenarios will require calculation time", 
             className="text-center lead text-muted mb-4" # 'lead' makes it larger, 'text-muted' makes it grey
         ),
+    # 2. Academic Context (Use dcc.Markdown for links, lighter text)
+    dcc.Markdown(
+        "The model is implemented based on the discrete choice model described in "
+        "[Aaberge and Colombino (2018)](https://www.microsimulation.pub/articles/00177) and "
+        "[Bronka et al. (2025)](https://www.microsimulation.pub/articles/00318).",
+        className="text-center text-muted small",
+        link_target="_blank" # Opens links in new tab
+    ),
     dbc.Row([
         # --- LEFT PANEL: PARAMETERS ---
         dbc.Col([
@@ -242,8 +250,6 @@ app.layout = dbc.Container([
                 ]),
 
                 dbc.CardBody([
-                    dcc.Graph(id='graph-employment-rate', style={"height": "400px"}),
-                    html.Hr(),
                     dcc.Graph(id='graph-total-hours', style={"height": "400px"}),
                     html.Hr(),
                     html.H5("Run History & Accuracy Scores", className="mt-4"),
@@ -321,8 +327,7 @@ def update_model_and_store(
 
 
 @app.callback(
-    [Output('graph-employment-rate', 'figure'),
-     Output('graph-total-hours', 'figure'),
+    [Output('graph-total-hours', 'figure'),
      Output('header-scores', 'children')],
     [Input('history-store', 'data')]
 )
@@ -345,46 +350,15 @@ def update_graphs(history_data):
         params = run_data['params']
         label_prefix = f"Run {i+1}"
 
-        # --- Graph 1: Employment Rates (Full vs Part time) ---
-        fig_rate.add_trace(go.Scatter(
-            x=df['scaler'], 
-            y=df['full_time'],
-            mode='lines',
-            name=f"{label_prefix} - Full Time",
-            line=dict(dash='solid')
-        ))
-        
-        fig_rate.add_trace(go.Scatter(
-            x=df['scaler'], 
-            y=df['part_time'],
-            mode='lines',
-            name=f"{label_prefix} - Part Time",
-            line=dict(dash='dot')
-        ))
-
-        # --- Graph 2: Total Employment Hours ---
+        # --- Graph: Total Employment Hours ---
         fig_hours.add_trace(go.Scatter(
             x=df['scaler'], 
             y=df['total_employment_hrs'],
             mode='lines',
             name=f"{label_prefix} - Total Hrs"
         ))
-    
-    # Formatting Graph 1
-    fig_rate.update_layout(
-        title="Employment Rate Sensitivity",
-        xaxis_title="Income Scaler",
-        yaxis_title="Employment rate (%)",
-        yaxis=dict(tickformat=".0%"), # Formats as percentage
-        hovermode="x unified",
-        template="plotly_white",
-        legend=dict(orientation="h", y=-0.2)
-    )
-    # Add Reference Lines (1.0, 1.0)
-    fig_rate.add_vline(x=1.0, line_dash="dash", line_color="red", opacity=0.5)
-    fig_rate.add_hline(y=1.0, line_dash="dash", line_color="blue", opacity=0.5)
 
-    # Formatting Graph 2
+    # Formatting Graph
     fig_hours.update_layout(
         title="Total Employment Hours Sensitivity",
         xaxis_title="Income Scaler",
@@ -397,7 +371,7 @@ def update_graphs(history_data):
     fig_hours.add_vline(x=1.0, line_dash="dash", line_color="red", opacity=0.5)
     fig_hours.add_hline(y=1.0, line_dash="dash", line_color="blue", opacity=0.5)
 
-    return fig_rate, fig_hours, header_text
+    return fig_hours, header_text
 
 @app.callback(
     Output('score-table-container', 'children'),
