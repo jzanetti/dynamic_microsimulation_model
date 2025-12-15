@@ -16,3 +16,4 @@ site-packages
 etc/app/*.png
 etc/app/*.csv
 etc/app/*.parquet
+etc/app/runs

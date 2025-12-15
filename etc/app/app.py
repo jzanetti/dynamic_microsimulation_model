@@ -31,8 +31,18 @@ HH_SIZE_PRESETS = {
     }
 }
 
+TAWA_DB = "etc/app/Synthetic-HES23-single-period.csv"
+OUTPUT_DIR = "runs"
 
-def load_and_process_model(input_params, force_rerun=False, hes_path="etc/app/Synthetic-HES23-single-period.csv", output_dir="etc/app"):
+
+
+
+# Create necessary directory if not exists
+if (os.path.exists(OUTPUT_DIR)):
+  os.makedirs(OUTPUT_DIR)
+
+
+def load_and_process_model(input_params, force_rerun=False, hes_path=TAWA_DB, output_dir=OUTPUT_DIR):
     """
     Wraps the user's original main execution block.
     """
