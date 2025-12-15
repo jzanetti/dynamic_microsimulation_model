@@ -6,37 +6,85 @@ ensure_dir <- function(path) {
   }
 }
 
-# --- 1. Plot Intermediate ---
-plot_intermediate <- function(data_to_plot, data_name, output_dir = "/tmp") {
-  
-  ensure_dir(output_dir)
-  
-  # Ensure input is a data frame for ggplot
-  df <- as.data.frame(data_to_plot)
+plot_intermediate <- function(input_params, data_name, output_dir = "/tmp") {
   
   if (data_name == "utility_func") {
+    # Generate filename hash (assuming this function exists in your env)
+    filename_hash <- data_filename_env$create_hash_filename(input_params)
     
-    # -- Plot 1: Full-time vs Part-time rates --
-    p1 <- ggplot(df, aes(x = scaler)) +
-      geom_line(aes(y = full_time, color = "full_time"), linewidth = 1) +
-      geom_line(aes(y = part_time, color = "part_time"), linewidth = 1) +
-      labs(title = "Employment behaviours with Random Utility Function",
-           x = "Income Scaler",
-           y = "Employment rate",
-           color = "Legend") +
+    # Define output paths
+    output_path1 <- file.path(output_dir, paste0("utility_employment_rate_", filename_hash, ".png"))
+    output_path2 <- file.path(output_dir, paste0("ruf_total_employment_hrs_", filename_hash, ".png"))
+    
+    # Read Data
+    sens_path <- file.path(output_dir, paste0("sensitivity_tests_", filename_hash, ".csv"))
+    acc_path <- file.path(output_dir, paste0("validation_score_", filename_hash, ".csv"))
+    
+    sensitivity_results <- read_csv(sens_path, show_col_types = FALSE)
+    accuracy_results <- read_csv(acc_path, show_col_types = FALSE)
+    
+    # Extract Accuracy Scores
+    highest_utility_accuracy <- accuracy_results %>% 
+      filter(scores == "highest_utility_accuracy") %>% 
+      pull(value)
+    
+    total_hrs_accuracy <- accuracy_results %>% 
+      filter(scores == "total_hrs_accuracy") %>% 
+      pull(value)
+    
+    # Format Title String
+    accuracy_score_str <- sprintf("Total Utility Accuracy: %.2f %%, Total Hours Accuracy: %.2f %%", 
+                                  highest_utility_accuracy, total_hrs_accuracy)
+    
+    # --- Plot 1: Employment Rates (Full-time vs Part-time) ---
+    
+    # Prepare dynamic labels from input_params
+    hours_opts <- input_params[["hours_options"]]
+    last_hr <- hours_opts[length(hours_opts)] # Equivalent to [-1]
+    second_hr <- hours_opts[2]                # Equivalent to [1]
+    
+    label_ft <- sprintf("Full-time (Working hours >= %shr)", last_hr)
+    label_pt <- sprintf("Part-time (Working hours >= %shr, < %shr)", second_hr, last_hr)
+    
+    # Reshape data (Pivot Long) to make it compatible with ggplot legend mapping
+    plot_data_1 <- sensitivity_results %>%
+      select(scaler, full_time, part_time) %>%
+      pivot_longer(cols = c(full_time, part_time), names_to = "type", values_to = "rate") %>%
+      mutate(type_label = ifelse(type == "full_time", label_ft, label_pt))
+    
+    p1 <- ggplot(plot_data_1, aes(x = scaler, y = rate, color = type_label)) +
+      geom_line(linewidth = 1) +
+      geom_vline(xintercept = 1.0, color = 'red', linetype = "dashed") +
+      geom_hline(yintercept = 1.0, color = 'blue', linetype = "dashed") +
+      scale_y_continuous(labels = scales::label_percent()) + # Formats 1.0 as 100%
+      labs(
+        title = paste("Employment behaviours with Random Utility Function", accuracy_score_str, sep = "\n"),
+        x = "Income Scaler",
+        y = "Employment rate",
+        color = NULL # Removes legend title
+      ) +
+      theme_minimal() +
+      theme(legend.position = "bottom")
+    
+    # Save Plot 1
+    ggsave(output_path1, plot = p1, width = 10, height = 6, bg = "white")
+    
+    # --- Plot 2: Total Employment Hours ---
+    p2 <- ggplot(sensitivity_results, aes(x = scaler, y = total_employment_hrs)) +
+      geom_line(linewidth = 1) +
+      geom_vline(xintercept = 1.0, color = 'red', linetype = "dashed") +
+      geom_hline(yintercept = 1.0, color = 'blue', linetype = "dashed") +
+      scale_y_continuous(labels = scales::label_percent()) +
+      labs(
+        title = paste("Employment behaviours with Random Utility Function", accuracy_score_str, sep = "\n"),
+        x = "Income Scaler",
+        y = "Employment hours"
+      ) +
       theme_minimal()
     
-    ggsave(file.path(output_dir, "utility_employment_rate.png"), plot = p1, width = 10, height = 6)
-    
-    # -- Plot 2: Total Hours --
-    p2 <- ggplot(df, aes(x = scaler, y = total_employment_hrs)) +
-      geom_line(color = "blue", linewidth = 1) +
-      labs(title = "Employment behaviours with Random Utility Function \n Total employment hours",
-           x = "Income Scaler",
-           y = "Employment hours") +
-      theme_minimal()
-    
-    ggsave(file.path(output_dir, "utility_employment_hrs.png"), plot = p2, width = 10, height = 6)
+    # Save Plot 2
+    ggsave(output_path2, plot = p2, width = 10, height = 6, bg = "white")
+    print(paste0("The employment hours figure are written into", output_path2))
   }
 }
 

@@ -1,63 +1,67 @@
-# Dynamic Microsimulation Model (DMM) - Core
+# Dynamic Microsimulation Model (DMM) Core
 
-This is the core model for the Dynamic Microsimulation Model (DMM). The model is available in both `Python` and `R`. The model is created based on the paper [Bronka et al.](https://www.microsimulation.pub/articles/00318)
+This repository contains the core implementation of a **Dynamic Microsimulation Model (DMM)**, designed for projecting individual and household life-course trajectories. The model supports analyses in domains such as demography, education, health, household composition, labour supply, and policy impacts (e.g., tax-benefit systems).
 
-## How to install the package
+The core model is implemented in **both Python and R**, allowing users to choose their preferred language while maintaining equivalent functionality. Inspired by open-source dynamic microsimulation frameworks, this implementation provides a flexible, modular structure for research and policy analysis.
 
-## Set up the environment:
+## Features
 
-For R, using:
+- Modular design for easy extension and customization
+- Support for partial modules (e.g., employment behaviour only) or full dynamic simulations
+- Cross-language compatibility (Python ↔ R)
+
+## Python vs. R: Side-by-Side Comparison
+
+| Aspect                      | Python                                      | R                                           |
+|-----------------------------|---------------------------------------------|---------------------------------------------|
+| **Environment Setup**       | `conda create -n ddm_core python=3.XX`<br>`conda activate ddm_core` | `renv::init(bare = TRUE)`<br>`renv::hydrate()` |
+| **Run Employment Behaviour Module** | `examples/run_behaviour_model.py`          | `examples/run_behaviour_model.R`            |
+| **Run Full Dynamic Model**  | `examples/run_full.py`                      | `examples/run_full.R`                       |
+
+Both implementations produce comparable results and share the same example structure.
+
+## Installation
+
+### Python
+Use `conda` for reproducible environments
+```bash
+# Recommended: Create a conda environment
+conda create -n ddm_core python=3.10
+conda activate ddm_core
+```
+
+### R:
+Use `renv` for reproducible environments
 ```R
 renv::init(bare = TRUE)
 renv::hydrate()
 ```
 
-## A quick start:
+## Quick Start
+The model can be run in two modes:
 
-### Step 1: Create a sample population dataset
+- Employment Behaviour Module Only – Useful for testing specific components.
+- Full Dynamic Model – Complete life-course simulation.
 
-A sample population dataset can be created using:
+### Examples
+Run the scripts in the `examples/` directory:
 
-```python
-from process.Python.data.sample import generate_sample_population
-generate_sample_population()
-```
+- Employment behaviour:
+  - `Python`: `examples/run_behaviour_model.py`
+  - `R`: `examples/run_behaviour_model.R`
 
-Or in R:
+- Full model:
+  - `Python`: `python examples/run_full.py`
+  - `R`: `examples/run_full.R`
 
-```R
-source("process/R/deps.R")
-source("process/R/data/sample.R", local = sample_env)
-sample_env$generate_population()
-```
 
-Sample data is written in the directory `etc/sample` in the `parquet` format
+These scripts demonstrate data loading, model initialization, simulation runs, and basic output inspection.
 
-### Step 2: Load the input data
-
-The input data can be loaded as via `Python`:
-
-```python
-sample_pop = create_inputs(
-    <the directory of input data in parquet>,
-    required_data_types=<what data to be userd>,
-    data_type="parquet",
-    base_year=cfg["base_year"],
-)
-```
-
-Or in `R`
-
-```R
-sample_pop <- data_input_env$create_inputs(
-  <the directory of input data in parquet>, # for example "etc/sample",
-  required_data_types = <what data to be userd>, # for example, c("pop", "mortality"),
-  data_type = "parquet",
-  base_year=cfg[["base_year"]])
-```
+## Contributing
+Contributions are welcome! Please open issues or pull requests.
 
 ## Developers
+TBA. Contact the maintainers for collaboration opportunities.
 
-### Python
-
-The package environment can be installed using `conda env create -f env.yml`
+## License
+TBA

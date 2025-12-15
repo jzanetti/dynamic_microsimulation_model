@@ -1,27 +1,42 @@
 
-
-predict <- function(data, params) {
-  scaled_income_hhld <- data[["income_hhld"]]
-  scaled_income <- data[["income"]]
-  scaled_leisure <- data[["leisure"]]
+predict <- function(data, params, method = "top30", scaler = 1.0) {
   
-  # Note: Accessing params by name assumes params is a named list or vector
-  data[["utlity"]] <- (
-    params[["beta_income_hhld"]] * scaled_income_hhld
-    + params[["beta_income_hhld2"]] * (scaled_income_hhld^2)
-    + params[["beta_leisure"]] * scaled_leisure
-    + params[["beta_leisure2"]] * (scaled_leisure^2)
-    + params[["beta_interaction"]] * (scaled_income * scaled_leisure)
+  # create local scaled vectors for cleaner calculation
+  scaled_income_hhld <- data$income_hhld * scaler
+  scaled_income <- data$income * scaler
+  scaled_leisure <- data$leisure
+  
+  # Calculate Utility
+  data$utility <- (
+    params["beta_income_hhld"] * scaled_income_hhld +
+      params["beta_income_hhld2"] * (scaled_income_hhld^2) +
+      params["beta_leisure"] * scaled_leisure +
+      params["beta_leisure2"] * (scaled_leisure^2) +
+      params["beta_interaction"] * (scaled_income * scaled_leisure)
   )
   
-  # Group by people_id and find the row with max utility
-  predictions <- data %>%
-    group_by(people_id) %>%
-    slice(which.max(utlity)) %>%
-    ungroup()
+  if (method == "top30") {
+    # Top 30% logic
+    predictions <- data %>%
+      group_by(people_id) %>%
+      # 1 - 0.3 = 0.7 (70th percentile)
+      mutate(threshold = quantile(utility, probs = 0.7, na.rm = TRUE)) %>%
+      filter(utility >= threshold) %>%
+      ungroup() %>%
+      select(-threshold) # remove helper column
+    
+  } else {
+    # Max utility logic
+    predictions <- data %>%
+      group_by(people_id) %>%
+      # slice_max with n=1 extracts the row with the highest value
+      slice_max(utility, n = 1, with_ties = FALSE) %>%
+      ungroup()
+  }
   
   return(predictions)
 }
+
 
 quadratic_utility <- function(params, income, income_hhld, leisure, income_to_income_hhld) {
   # Utility Function: U = b_c*C + b_c2*C^2 + b_l*L + b_l2*L^2 + b_cl*(C*L)
@@ -114,7 +129,7 @@ utility_func <- function(
   data_output_path <- sprintf("%s/utility_func_data_%s.parquet", output_dir, filename_hash)
   model_output_path <- sprintf("%s/utility_func_parameters_%s.csv", output_dir, filename_hash)
   
-  if (recreate_data) {
+  if (recreate_data | !file.exists(data_output_path)) {
     data_input_env$prepare_ruf_inputs(
       df_input,
       hours_options,
@@ -125,7 +140,7 @@ utility_func <- function(
       data_output_path=data_output_path
     )
   }
-  proc_data <- arrow::read_parquet(data_output_path)
+  proc_data <- read_parquet(data_output_path)
 
   # Extract initials and bounds
   initial_guess <- sapply(params_dict, function(x) x[["initial"]])
@@ -146,7 +161,6 @@ utility_func <- function(
     control = list(
       trace = 1, 
       REPORT = 1
-      # ndeps = rep(1e-8, length(initial_guess))
     ) 
   )
   
@@ -158,7 +172,6 @@ utility_func <- function(
   }
   
   # Write outputs
-  # Creating a dataframe from the list
   results_params_df <- data.frame(
     parameter = names(result_params),
     Value = unlist(result_params),
@@ -169,5 +182,5 @@ utility_func <- function(
   write_csv(results_params_df, model_output_path)
   
   print(sprintf("The model training data are written to %s", data_output_path))
-  arrow::write_parquet(proc_data, data_output_path)
+  write_parquet(proc_data, data_output_path)
 }

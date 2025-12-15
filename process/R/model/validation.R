@@ -1,98 +1,84 @@
 
-
 run_ruf_sensitivity <- function(input_params, 
-                                income_scaler = seq(0.5, 2.0, 0.01), 
+                                income_scaler = seq(0.5, 1.9, by = 0.1), 
                                 output_dir = "", 
                                 plot_using_ratio = TRUE) {
-  
-  # Generate hash (mimicking your create_hash_filename logic)
-  # You might need to adjust this depending on how your Python hash was generated
-  # heavily dependent on the exact structure of input_params
+
+
   filename_hash <- data_filename_env$create_hash_filename(input_params)
-  
   data_output_path <- file.path(output_dir, paste0("utility_func_data_", filename_hash, ".parquet"))
   model_output_path <- file.path(output_dir, paste0("utility_func_parameters_", filename_hash, ".csv"))
   accuracy_output_path <- file.path(output_dir, paste0("validation_score_", filename_hash, ".csv"))
   results_path <- file.path(output_dir, paste0("sensitivity_tests_", filename_hash, ".csv"))
   
-  print(sprintf("Model estimated parameters are read from %s", model_output_path))
+  print(paste("Model estimated parameters are read from", model_output_path))
   model_params_df <- read_csv(model_output_path, show_col_types = FALSE)
-  # Convert to named vector for fast lookup
   model_params <- setNames(model_params_df$Value, model_params_df$parameter)
   
-  print(sprintf("Model training data are read from %s", data_output_path))
-  # Load as data.table immediately for speed
-  data_to_check <- as.data.table(read_parquet(data_output_path))
+  print(paste("Model training data are read from", data_output_path))
+  data_to_check <- read_parquet(data_output_path)
   
-  print(sprintf("Model accuracy is read from %s", accuracy_output_path))
+  # Note: model_accuracy is read but not used in the logic, kept for consistency with Python
+  print(paste("Model accuracy is read from", accuracy_output_path))
   model_accuracy_df <- read_csv(accuracy_output_path, show_col_types = FALSE)
+  model_accuracy <- setNames(model_accuracy_df$value, model_accuracy_df$scores)
   
-  # Initialize results vectors
-  res_full_time <- numeric(length(income_scaler))
-  res_part_time <- numeric(length(income_scaler))
-  res_total_hrs <- numeric(length(income_scaler))
+  # Initialize results lists
+  res_full_time <- numeric()
+  res_part_time <- numeric()
+  res_total_employment_hrs <- numeric()
   
-  # Pre-calculate invariant terms to speed up loop
-  # (Though in your specific formula, interaction terms depend on scaler, so we calc inside)
+  # Extract hour options for easier access
+  # Python [-1] is last element; Python [1] is second element (index 1)
+  # R is 1-based, so [1] becomes [2], and [-1] becomes length()
+  hours_options <- input_params[["hours_options"]]
+  last_option <- hours_options[length(hours_options)]
+  second_option <- hours_options[2]
   
-  for (i in seq_along(income_scaler)) {
-    scaler <- income_scaler[i]
+  for (scaler in income_scaler) {
     
-    # Scale variables
-    # We use temporary vectors to avoid modifying the main data.table in place repeatedly
-    # or we can modify by reference if memory is tight, but here we just compute vectors.
-    scaled_income_hhld <- data_to_check$income_hhld * scaler
-    scaled_income <- data_to_check$income * scaler
-    scaled_leisure <- data_to_check$leisure
+    print(paste("Processing sensitivity study for scaler:", scaler))
     
-    # Calculate Utility
-    # Using 'with' is cleaner than repeated data_to_check$...
-    utility <- (
-      model_params["beta_income_hhld"] * scaled_income_hhld +
-        model_params["beta_income_hhld2"] * (scaled_income_hhld^2) +
-        model_params["beta_leisure"] * scaled_leisure +
-        model_params["beta_leisure2"] * (scaled_leisure^2) +
-        model_params["beta_interaction"] * (scaled_income * scaled_leisure)
-    )
-    
-    # Assign utility back to DT temporarily
-    data_to_check[, current_utility := utility]
-    
-    # Find choice with max utility per person
-    # data.table syntax: .SD[which.max(current_utility)] by people_id
-    predicted_choices <- data_to_check[, .SD[which.max(current_utility)], by = people_id]
+    # Assuming ruf_predict is loaded in the environment
+    predicted_choices <- model_ruf_env$predict(data_to_check, model_params, method = "top30", scaler = scaler)
     
     n_preds <- nrow(predicted_choices)
     
-    # Calculate rates
-    # Hours options from params (assuming standard R vector indexing)
-    ft_threshold <- tail(input_params$hours_options, 1) # Last element
-    pt_min <- input_params$hours_options[2]             # Second element (index 2 in R)
+    # Full Time Rate
+    ft_count <- nrow(filter(predicted_choices, option_hours >= last_option))
+    full_time_employment_rate <- round((ft_count / n_preds) * 100, 2)
     
-    ft_count <- sum(predicted_choices$option_hours >= ft_threshold)
-    pt_count <- sum(predicted_choices$option_hours >= pt_min & 
-                      predicted_choices$option_hours < ft_threshold)
+    # Part Time Rate
+    # Python: >= options[1] AND < options[-1]
+    pt_count <- nrow(filter(predicted_choices, 
+                            option_hours >= second_option & option_hours < last_option))
+    part_time_employment_rate <- round((pt_count / n_preds) * 100, 2)
     
-    res_full_time[i] <- round(ft_count / n_preds * 100, 2)
-    res_part_time[i] <- round(pt_count / n_preds * 100, 2)
+    # Total Employment Hours
+    # Logic: Sum of the mean option_hours per person
+    total_hrs <- predicted_choices %>%
+      group_by(people_id) %>%
+      summarise(mean_hrs = mean(option_hours, na.rm = TRUE)) %>%
+      summarise(sum_mean = sum(mean_hrs, na.rm = TRUE)) %>%
+      pull(sum_mean)
     
-    # Total employment hours (sum of option_hours for the chosen rows)
-    # Note: In your python script you multiplied by 'is_chosen', but 'predicted_choices'
-    # IS the chosen row in this simulation context.
-    res_total_hrs[i] <- sum(predicted_choices$option_hours)
+    # Append to results
+    res_full_time <- c(res_full_time, full_time_employment_rate)
+    res_part_time <- c(res_part_time, part_time_employment_rate)
+    res_total_employment_hrs <- c(res_total_employment_hrs, total_hrs)
   }
   
-  # Construct results data frame
+  # Create Results DataFrame
   results <- data.frame(
     full_time = res_full_time,
     part_time = res_part_time,
-    total_employment_hrs = res_total_hrs,
+    total_employment_hrs = res_total_employment_hrs,
     scaler = income_scaler
   )
   
-  # Normalize if requested
   if (plot_using_ratio) {
-    # find index where scaler is approx 1.0
+    # Find index where scaler is approximately 1.0
+    # Python uses isclose with atol=1e-5. In R:
     idx <- which(abs(results$scaler - 1.0) < 1e-5)[1]
     
     if (!is.na(idx)) {
@@ -102,39 +88,57 @@ run_ruf_sensitivity <- function(input_params,
     }
   }
   
-  print(paste0("Writing sensitivity study results to ", results_path))
+  print(paste("Writing sensitivity study results to", results_path))
   write_csv(results, results_path)
 }
 
 
-run_ruf_validation <- function(input_params, output_dir) {
+run_ruf_validation <- function(input_params, output_dir, method = "top30") {
   
   filename_hash <- data_filename_env$create_hash_filename(input_params)
   
-  data_path <- file.path(output_dir, paste0("utility_func_data_", filename_hash, ".parquet"))
-  params_path <- file.path(output_dir, paste0("utility_func_parameters_", filename_hash, ".csv"))
-  score_path <- file.path(output_dir, paste0("validation_score_", filename_hash, ".csv"))
+  parquet_path <- file.path(
+    output_dir, 
+    paste0("utility_func_data_", 
+           filename_hash, 
+           ".parquet"))
+  data <- read_parquet(parquet_path)
   
-  data <- read_parquet(data_path)
-  # data is already a data.frame (tibble) from arrow
+  csv_path <- file.path(
+    output_dir, 
+    paste0("utility_func_parameters_", 
+           filename_hash, 
+           ".csv"))
+  params_df <- read_csv(csv_path, show_col_types = FALSE)
   
-  params_df <- read_csv(params_path, show_col_types = FALSE)
   params <- setNames(params_df$Value, params_df$parameter)
   
-  # Assuming ruf_predict is an R function you have defined elsewhere
-  # source("process/R/model/random_utility_function.R")
-  predicted_choices <- model_ruf_env$predict(data, params)
+
+  predicted_choices <- model_ruf_env$predict(data, params, method = method)
   
-  pred_n <- sum(predicted_choices$is_chosen == 1, na.rm = TRUE)
-  truth_n <- sum(data$is_chosen == 1, na.rm = TRUE)
-  
-  pred_hrs <- sum(predicted_choices$option_hours[predicted_choices$is_chosen == 1], na.rm = TRUE)
+  pred_n <- nrow(filter(predicted_choices, is_chosen == 1))
+  truth_n <- nrow(filter(data, is_chosen == 1))
   truth_hrs <- sum(data$option_hours[data$is_chosen == 1], na.rm = TRUE)
   
+  # Logic for method == "top30"
+  if (method == "top30") {
+    pred_hrs <- data %>%
+      group_by(people_id) %>%
+      summarise(mean_hrs = mean(option_hours, na.rm = TRUE)) %>%
+      summarise(total_pred_hrs = sum(mean_hrs)) %>%
+      pull(total_pred_hrs)
+  } else {
+    pred_hrs <- sum(
+      predicted_choices$option_hours[predicted_choices$is_chosen == 1], na.rm = TRUE)
+  }
+  
+  # Create Scores Dataframe
   scores <- data.frame(
     scores = c("highest_utility_accuracy", "total_hrs_accuracy"),
     value = c(100.0 * pred_n / truth_n, 100.0 * pred_hrs / truth_hrs)
   )
   
-  write_csv(scores, score_path)
+  # Write to CSV
+  output_path <- file.path(output_dir, paste0("validation_score_", filename_hash, ".csv"))
+  write_csv(scores, output_path)
 }

@@ -6,24 +6,28 @@ from pandas import read_csv
 from process.Python.data.tawa import tawa_data_preprocess
 from process.Python.vis import plot_intermediate
 
-if __name__ == "__main__":
 
-    input_params = {
-        "total_hours": 80.0,
-        "min_hourly_wage": 23.0,
-        "leisure_value": 23.0,
-        "exclude_seniors": False,
-        "hours_options": [0, 10, 20, 30, 40],
-        "apply_household_income_filter": {"min": 0.1, "max": 0.7},
-        "apply_earner_type_filter": None, 
-        "apply_household_size_filter": None
-        # "apply_earner_type_filter": "primary",
-        #"apply_household_size_filter": {
-        #    "H_Counts_Adults": [2, 2],
-        #    "H_Counts_DependentKids": [0, 1]}
-    }
+run_model = False
+run_validation = False
+run_sensitivity = True
+
+input_params = {
+    "total_hours": 80.0,
+    "min_hourly_wage": 23.0,
+    "leisure_value": 23.0,
+    "exclude_seniors": False,
+    "hours_options": [0, 10, 20, 30, 40],
+    "apply_household_income_filter": {"min": 0.1, "max": 0.7},
+    "apply_earner_type_filter": None, 
+    "apply_household_size_filter": None
+    # "apply_earner_type_filter": "primary",
+    #"apply_household_size_filter": {
+    #    "H_Counts_Adults": [2, 2],
+    #    "H_Counts_DependentKids": [0, 1]}
+}
 
 
+if run_model:
     hes_data = read_csv("etc/app/Synthetic-HES23-single-period.csv")
 
     data = tawa_data_preprocess(
@@ -35,8 +39,6 @@ if __name__ == "__main__":
         apply_earner_type_filter=input_params["apply_earner_type_filter"],
         apply_household_size_filter = input_params["apply_household_size_filter"])
 
-    accuacry_scores = []
-
     utility_func(
         data,
         input_params,
@@ -46,11 +48,11 @@ if __name__ == "__main__":
         recreate_data = True
     )
 
+if run_validation:
     run_ruf_validation(input_params, output_dir="etc/app")
 
+if run_sensitivity:
     run_ruf_sensitivity(input_params, output_dir="etc/app/")
-
-    
     plot_intermediate(
         input_params,
         "utility_func", 

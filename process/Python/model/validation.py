@@ -49,29 +49,6 @@ def run_ruf_sensitivity(
         logger.info(f"Processing sensitivity study for scaler: {scaler}")
         predicted_choices = ruf_predict(data_to_check, model_params, method = "top30", scaler = scaler)
 
-        """
-        scaled_income_hhld = data_to_check["income_hhld"] * scaler
-        scaled_income = data_to_check["income"] * scaler
-        scaled_leisure = data_to_check["leisure"]
-
-        data_to_check["utlity"] = (
-            model_params["beta_income_hhld"] * scaled_income_hhld
-            + model_params["beta_income_hhld2"] * (scaled_income_hhld**2)
-            + model_params["beta_leisure"] * scaled_leisure
-            + model_params["beta_leisure2"] * (scaled_leisure**2)
-            + model_params["beta_interaction"] * (scaled_income * scaled_leisure)
-            + model_params["beta_interaction2"] * (scaled_income * scaled_income_hhld)
-        )
-        predicted_choices = data_to_check.loc[
-            data_to_check.groupby("people_id")["utlity"].idxmax()
-        ]
-        """
-
-        #mean_hours_options = mean(input_params["hours_options"])
-
-        #predicted_choices.groupby("people_id")["option_hours"].mean()
-
-        
         full_time_employment_rate = round(
             len(predicted_choices[predicted_choices["option_hours"] >= input_params["hours_options"][-1]])
             / len(predicted_choices)
