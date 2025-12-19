@@ -32,13 +32,11 @@ HH_SIZE_PRESETS = {
 }
 
 TAWA_DB = "etc/app/Synthetic-HES23-single-period.csv"
-OUTPUT_DIR = "runs"
-
-
+OUTPUT_DIR = "etc/app/runs"
 
 
 # Create necessary directory if not exists
-if (os.path.exists(OUTPUT_DIR)):
+if (not os.path.exists(OUTPUT_DIR)):
   os.makedirs(OUTPUT_DIR)
 
 
@@ -89,14 +87,16 @@ def load_and_process_model(input_params, force_rerun=False, hes_path=TAWA_DB, ou
         # Extract scalar scores
         highest_utility_accuracy = accuracy_df[accuracy_df["scores"] == "highest_utility_accuracy"]["value"].values[0]
         total_hrs_accuracy = accuracy_df[accuracy_df["scores"] == "total_hrs_accuracy"]["value"].values[0]
+        r2_mcfadden = accuracy_df[accuracy_df["scores"] == "r2_mcfadden"]["value"].values[0]
         
-        score_summary = f"Util Acc: {round(highest_utility_accuracy, 2)}% | Hrs Acc: {round(total_hrs_accuracy, 2)}%"
+        score_summary = f"Util Acc: {round(highest_utility_accuracy, 2)}% | Hrs Acc: {round(total_hrs_accuracy, 2)}% | R2: {round(r2_mcfadden, 2)}"
 
         return {
             "sensitivity": sensitivity_df.to_dict('records'),
             "metrics": {
                 "utility_acc": highest_utility_accuracy, 
-                "hours_acc": total_hrs_accuracy
+                "hours_acc": total_hrs_accuracy,
+                "r2": r2_mcfadden
             },
             "score_str": score_summary,
             "params": input_params,
@@ -195,15 +195,15 @@ app.layout = dbc.Container([
                         "value_filter"
                     ),
                     dbc.Row([
-                        dbc.Col(dbc.Input(id='input-inc-min', type='number', value=0.1, step=0.05)),
-                        dbc.Col(dbc.Input(id='input-inc-max', type='number', value=0.7, step=0.05)),
+                        dbc.Col(dbc.Input(id='input-inc-min', type='number', value=0.1, step=0.01)),
+                        dbc.Col(dbc.Input(id='input-inc-max', type='number', value=0.7, step=0.01)),
                     ], className="mb-2"),
 
                     html.Hr(),
                     html.Label("Earner type:"),
                     dcc.Dropdown(
                         id='input-earner-type',
-                        options=["All", "Primary", "Secondary"],
+                        options=["All", "Primary", "Others"],
                         value="All",  # Default value
                         clearable=False,
                         className="mb-3"
@@ -406,7 +406,8 @@ def update_score_table(history_data):
             html.Th("Household filter"),
             html.Th("Earner"),
             html.Th("Utility Acc (%)"),
-            html.Th("Hours Acc (%)")
+            html.Th("Hours Acc (%)"),
+            html.Th("R2 (%)"),
         ]))
     ]
 
@@ -414,7 +415,7 @@ def update_score_table(history_data):
     rows = []
     for i, run in enumerate(history_data):
         params = run['params']
-        metrics = run.get('metrics', {'utility_acc': 0, 'hours_acc': 0})
+        metrics = run.get('metrics', {'utility_acc': 0, 'hours_acc': 0, "r2": 0})
         
         # Color code: Highlight the latest run
         row_style = {"fontWeight": "bold", "backgroundColor": "#f8f9fa"} if i == len(history_data) - 1 else {}
@@ -430,6 +431,7 @@ def update_score_table(history_data):
             html.Td(f"{params['apply_earner_type_filter']}"),
             html.Td(f"{metrics['utility_acc']:.2f}%"),
             html.Td(f"{metrics['hours_acc']:.2f}%"),
+            html.Td(f"{metrics['r2']:.2f}")
         ], style=row_style)
         rows.append(row)
 

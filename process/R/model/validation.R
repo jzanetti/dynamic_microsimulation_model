@@ -2,7 +2,8 @@
 run_ruf_sensitivity <- function(input_params, 
                                 income_scaler = seq(0.5, 1.9, by = 0.1), 
                                 output_dir = "", 
-                                plot_using_ratio = TRUE) {
+                                plot_using_ratio = TRUE,
+                                method = RUF_METHOD) {
 
 
   filename_hash <- data_filename_env$create_hash_filename(input_params)
@@ -40,7 +41,7 @@ run_ruf_sensitivity <- function(input_params,
     print(paste("Processing sensitivity study for scaler:", scaler))
     
     # Assuming ruf_predict is loaded in the environment
-    predicted_choices <- model_ruf_env$predict(data_to_check, model_params, method = "top30", scaler = scaler)
+    predicted_choices <- model_ruf_env$predict(data_to_check, model_params, method = method, scaler = scaler)
     
     n_preds <- nrow(predicted_choices)
     
@@ -113,11 +114,29 @@ run_ruf_validation <- function(input_params, output_dir, method = "top30") {
   
   params <- setNames(params_df$Value, params_df$parameter)
   
-
+  # 2. Calculate r2_mcfadden
+  options_n <- length(unique(data$option_hours))
+  
+  # Extract specific parameters by name
+  params_keys <- c("beta_income_hhld", "beta_income_hhld2", 
+                   "beta_leisure", "beta_leisure2", "beta_interaction")
+  params_list <- params[params_keys]
+  
+  # Calculate Log Likelihood
+  ll_model <- -model_ruf_env$negative_log_likelihood(params_list, data, options_n)
+  
+  n_people <- nrow(data) %/% options_n # Integer division in R is %/%
+  ll_null <- n_people * log(1 / options_n)
+  
+  r2_mcfadden <- 1 - (ll_model / ll_null)
+  
+  # 2. Calculate utility accuracy
   predicted_choices <- model_ruf_env$predict(data, params, method = method)
   
   pred_n <- nrow(filter(predicted_choices, is_chosen == 1))
   truth_n <- nrow(filter(data, is_chosen == 1))
+  
+  # 3. Calculate emplpyment hours accuracy
   truth_hrs <- sum(data$option_hours[data$is_chosen == 1], na.rm = TRUE)
   
   # Logic for method == "top30"
@@ -134,8 +153,8 @@ run_ruf_validation <- function(input_params, output_dir, method = "top30") {
   
   # Create Scores Dataframe
   scores <- data.frame(
-    scores = c("highest_utility_accuracy", "total_hrs_accuracy"),
-    value = c(100.0 * pred_n / truth_n, 100.0 * pred_hrs / truth_hrs)
+    scores = c("highest_utility_accuracy", "total_hrs_accuracy", "r2_mcfadden"),
+    value = c(100.0 * pred_n / truth_n, 100.0 * pred_hrs / truth_hrs, r2_mcfadden)
   )
   
   # Write to CSV

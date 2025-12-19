@@ -8,6 +8,9 @@ from process.Python.model.random_utlity_function import predict as ruf_predict
 from process.Python.vis import plot_intermediate
 from logging import getLogger
 from process.Python.data.filename import create_hash_filename
+from process.Python import RUF_METHOD
+from process.Python.model.random_utlity_function import negative_log_likelihood
+from numpy import log as np_log
 
 logger = getLogger()
 
@@ -16,7 +19,8 @@ def run_ruf_sensitivity(
     input_params: dict, 
     income_scaler: list = arange(0.5, 2.0, 0.1), 
     output_dir: str = "",
-    plot_using_ratio: bool = True
+    plot_using_ratio: bool = True,
+    method = RUF_METHOD
 ):
 
     filename_hash = create_hash_filename(input_params)
@@ -47,7 +51,7 @@ def run_ruf_sensitivity(
     for scaler in income_scaler:
 
         logger.info(f"Processing sensitivity study for scaler: {scaler}")
-        predicted_choices = ruf_predict(data_to_check, model_params, method = "top30", scaler = scaler)
+        predicted_choices = ruf_predict(data_to_check, model_params, method = method, scaler=scaler)
 
         full_time_employment_rate = round(
             len(predicted_choices[predicted_choices["option_hours"] >= input_params["hours_options"][-1]])
@@ -92,10 +96,7 @@ def run_ruf_sensitivity(
     DataFrame(results).to_csv(results_path)
     
 
-
-
-
-def run_ruf_validation(input_params: dict, output_dir: str, method = "top30"):
+def run_ruf_validation(input_params: dict, output_dir: str, method=RUF_METHOD):
 
     filename_hash = create_hash_filename(input_params)
 
@@ -104,12 +105,30 @@ def run_ruf_validation(input_params: dict, output_dir: str, method = "top30"):
     params = read_csv(f"{output_dir}/utility_func_parameters_{filename_hash}.csv")
     params = params.set_index('parameter')['Value'].to_dict()
 
+
+    # 1. Calculate r2_mcfadden
+    options_n = len(data["option_hours"].unique())
+    params_list = []
+    for proc_key in ["beta_income_hhld", 
+                     "beta_income_hhld2", 
+                     "beta_leisure", 
+                     "beta_leisure2", 
+                     "beta_interaction"]:
+        params_list.append(params[proc_key])
+    
+    ll_model = -negative_log_likelihood(params_list, data, options_n)
+    n_people = len(data) // options_n
+    ll_null = n_people * np_log(1 / options_n)
+    r2_mcfadden = 1 - (ll_model / ll_null)
+
+    # 2. Calculate utility accuracy
     predicted_choices = ruf_predict(data, params, method=method)
 
     pred_n = len(predicted_choices[predicted_choices["is_chosen"] == 1])
     truth_n = len(data[data["is_chosen"] == 1])
-    truth_hrs = data[data["is_chosen"] == 1]["option_hours"].sum()
 
+    # 3. Calculate emplpyment hours accuracy
+    truth_hrs = data[data["is_chosen"] == 1]["option_hours"].sum()
     if method == "top30":
         pred_hrs = sum(data.groupby("people_id")["option_hours"].mean())
     else:
@@ -117,8 +136,8 @@ def run_ruf_validation(input_params: dict, output_dir: str, method = "top30"):
 
     scores = DataFrame(
         {
-            "scores": ["highest_utility_accuracy", "total_hrs_accuracy"],
-            "value": [100.0 * pred_n / truth_n, 100.0 * pred_hrs / truth_hrs]
+            "scores": ["highest_utility_accuracy", "total_hrs_accuracy", "r2_mcfadden"],
+            "value": [100.0 * pred_n / truth_n, 100.0 * pred_hrs / truth_hrs, r2_mcfadden]
         }
     )
 

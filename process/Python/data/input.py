@@ -99,7 +99,7 @@ def prepare_ruf_inputs(
                 if proc_hours > 0:
                     market_income_person = person_wage * proc_hours
                 else:
-                    market_income_person = 0
+                    market_income_person = 1e-9
 
                 gross_income_person = market_income_person
 
@@ -129,8 +129,10 @@ def prepare_ruf_inputs(
 
     # results = results.drop_duplicates()
 
-    results["income_to_income_hhld"] = results["income"] / results["income_hhld"]
+    # results["income_to_income_hhld"] = results["income"] / results["income_hhld"]
     for proc_key in ["income", "income_hhld", "leisure"]:
         results[proc_key] = results[proc_key] / data_scaler
 
+    results = results.sort_values(by=["household_id", "people_id", "option_hours"]).reset_index(drop=True)
+    
     pq_write_table(pa.Table.from_pandas(results), data_output_path)

@@ -43,3 +43,5 @@ model_heckman_wage_env <- new.env()
 # Constants
 # ------------------------
 TEST_RUN = FALSE
+RUN_LOG = TRUE
+RUF_METHOD = "top30"

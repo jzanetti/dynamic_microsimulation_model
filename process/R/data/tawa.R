@@ -11,6 +11,7 @@ tawa_data_preprocess <- function(
     income_types = c("P_Income_SelfEmployed", "P_Income_WageSalary"),
     apply_earner_type_filter = NULL,
     apply_household_income_filter = list("min" = 0.3, "max" = 0.7),
+    apply_people_income_filter = list("min" = 0.1, "max" = 0.9),
     apply_household_size_filter = list(
       "H_Counts_Adults" = c(2, 2),
       "H_Counts_DependentKids" = c(1, 3)
@@ -32,12 +33,13 @@ tawa_data_preprocess <- function(
   
   if (exclude_seniors) {
     # Group by household and check if min age in household < 65
-    df <- df %>%
-      group_by(snz_hes_hhld_uid) %>%
-      mutate(min_age_in_hh = min(P_Attributes_Age)) %>%
-      ungroup() %>%
-      filter(min_age_in_hh < 65) %>%
-      select(-min_age_in_hh)
+    # df <- df %>%
+    #  group_by(snz_hes_hhld_uid) %>%
+    #  mutate(min_age_in_hh = min(P_Attributes_Age)) %>%
+    #  ungroup() %>%
+    #  filter(min_age_in_hh < 65) %>%
+    #  select(-min_age_in_hh)
+    df = df[df$P_Attributes_Age < 65,]
   }
   
   # ---------------------------------------------
@@ -72,9 +74,23 @@ tawa_data_preprocess <- function(
     )
   
   df$gender <- ifelse(df$gender == 1, "Male", "Female")
+  # ---------------------------------------------
+  # Step 4: Quality control for the market income
+  # ---------------------------------------------
+  if (!is.null(apply_people_income_filter)) {
+
+    thres_min <- quantile(df$market_income_per_week, probs = apply_people_income_filter[["min"]], na.rm = TRUE)
+    thres_max <- quantile(df$market_income_per_week, probs = apply_people_income_filter[["max"]], na.rm = TRUE)
+    
+    df <- df %>%
+      filter(
+        market_income_per_week >= thres_min &
+          market_income_per_week <= thres_max
+      )
+  }
   
   # ---------------------------------------------
-  # Step 4: Obtain working hours
+  # Step 5: Obtain working hours
   # ---------------------------------------------
   df <- data_sample_env$obtain_working_hours(df)
   
@@ -85,9 +101,9 @@ tawa_data_preprocess <- function(
   )
   
   # ---------------------------------------------
-  # Step 5: Data quality control
+  # Step 6: Data quality control
   # ---------------------------------------------
-  # 5.1: Remove outlier households 
+  # 6.1: Remove outlier households 
   if (!is.null(apply_household_income_filter)) {
     df <- df %>%
       group_by(household_id) %>%
@@ -104,7 +120,7 @@ tawa_data_preprocess <- function(
       )
   }
   
-  # 5.2: Correct wage for people who are not working (here we use minimum wage)
+  # 6.2: Correct wage for people who are not working (here we use minimum wage)
   df$market_income_per_hour <- ifelse(
     df$working_hours == 1e-9,
     min_hourly_wage,
@@ -129,11 +145,12 @@ tawa_data_preprocess <- function(
         ungroup()
       selected_id <- unique(df_primary$id)
       
-    } else if (tolower(apply_earner_type_filter) == "secondary") {
+    } else if (tolower(apply_earner_type_filter) == "others") {
       # pandas nth(1) is the second row
       df_secondary <- df %>%
         group_by(household_id) %>%
-        slice(2) %>%
+        # slice(2) %>%'
+        slice(-1) %>%
         ungroup()
       selected_id <- unique(df_secondary$id)
     }

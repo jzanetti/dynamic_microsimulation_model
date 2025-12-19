@@ -32,9 +32,13 @@ plot_intermediate <- function(input_params, data_name, output_dir = "/tmp") {
       filter(scores == "total_hrs_accuracy") %>% 
       pull(value)
     
+    r2_mcfadden <- accuracy_results %>%
+      filter(scores == "r2_mcfadden") %>%
+      pull(value)
+    
     # Format Title String
-    accuracy_score_str <- sprintf("Total Utility Accuracy: %.2f %%, Total Hours Accuracy: %.2f %%", 
-                                  highest_utility_accuracy, total_hrs_accuracy)
+    accuracy_score_str <- sprintf("Total Utility Accuracy: %.2f %%, Total Hours Accuracy: %.2f %%, McFadden's R2: %.2f %%", 
+                                  highest_utility_accuracy, total_hrs_accuracy, r2_mcfadden)
     
     # --- Plot 1: Employment Rates (Full-time vs Part-time) ---
     

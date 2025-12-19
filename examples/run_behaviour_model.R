@@ -18,20 +18,21 @@ source("process/R/model/random_utility_function.R", local = model_ruf_env)
 source("process/R/model/validation.R", local = model_validation_env)
 
 input_params <- list(
-      "total_hours" = 80.0,
-      "min_hourly_wage" = 23.0,
-      "leisure_value" = 23.0,
-      "exclude_seniors" = FALSE,
-      "hours_options" = c(0, 10, 20, 30, 40),
-      "apply_household_income_filter" = list("min" = 0.1, "max" = 0.7),
-      "apply_earner_type_filter" = NULL, 
-      "apply_household_size_filter" = NULL
+    "total_hours" = 80.0,
+    "min_hourly_wage" = 23.0,
+    "leisure_value" = 23.0,
+    "exclude_seniors" = TRUE,
+    "hours_options" = c(0, 10, 20, 30, 40),
+    "apply_household_income_filter" = list("min" = 0.1, "max" = 0.7),
+    "apply_earner_type_filter" = NULL, 
+    "apply_household_size_filter" = NULL
 )
 
 
-run_model = FALSE
-run_validation = FALSE
+run_model = TRUE
+run_validation = TRUE
 run_sensitivity = TRUE
+output_dir = "etc/app/runs"
 
 if (run_model) {
   
@@ -46,27 +47,25 @@ if (run_model) {
       apply_earner_type_filter=input_params[["apply_earner_type_filter"]],
       apply_household_size_filter = input_params[["apply_household_size_filter"]])
   
-  
-  
   model_ruf_env$utility_func(
        data,
        input_params,
        income_name=list("market" = "market_income_per_hour"),
        working_hours_name="working_hours",
-       output_dir = "etc/app",
-       recreate_data = TRUE
+       output_dir = output_dir,
+       recreate_data = FALSE
   )
 }
 
 if (run_validation) {
-  model_validation_env$run_ruf_validation(input_params, output_dir="etc/app")
+  model_validation_env$run_ruf_validation(input_params, output_dir=output_dir)
 }
 
 if (run_sensitivity) {
-  model_validation_env$run_ruf_sensitivity(input_params, output_dir="etc/app/")
+  model_validation_env$run_ruf_sensitivity(input_params, output_dir=output_dir)
   vis_env$plot_intermediate(
     input_params,
     "utility_func", 
-    output_dir = "etc/app/")
+    output_dir = output_dir)
 }
 

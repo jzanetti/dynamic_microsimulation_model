@@ -4,6 +4,7 @@ from process.Python.data.sample import obtain_working_hours
 from pandas import DataFrame, Series
 from pandas import DataFrame
 from numpy import where
+from process.Python.data import EPLISON
 
 def tawa_data_preprocess(
     df: DataFrame, 
@@ -18,10 +19,13 @@ def tawa_data_preprocess(
     apply_household_income_filter: dict or None = {
         "min": 0.3, "max": 0.7
     },
+    apply_people_income_filter: dict or None = {
+        "min": 0.1, "max": 0.9
+    },
     apply_household_size_filter: dict or None = {
         "H_Counts_Adults": [2, 2],
         "H_Counts_DependentKids": [1, 3]
-    }
+    },
 ):
     
     # ---------------------------------------------
@@ -34,7 +38,8 @@ def tawa_data_preprocess(
         df = df[mask]
 
     if exclude_seniors:
-        df = df[df.groupby("snz_hes_hhld_uid")["P_Attributes_Age"].transform("min") < 65]
+        # df = df[df.groupby("snz_hes_hhld_uid")["P_Attributes_Age"].transform("min") < 65]
+        df = df[df["P_Attributes_Age"] < 65]
 
     # ---------------------------------------------
     # Step 2: Apply Person filter (only people over 18 will be considered)
@@ -66,9 +71,20 @@ def tawa_data_preprocess(
         ]
     ]
     df["gender"] = where(df["gender"] == 1, "Male", "Female")
-    
+
     # ---------------------------------------------
-    # Step 4: Obtain working hours
+    # Step 4: Quality control for the market income
+    # ---------------------------------------------
+    if apply_people_income_filter is not None:
+        thres_min = df['market_income_per_week'].quantile(apply_people_income_filter["min"])
+        thres_max = df['market_income_per_week'].quantile(apply_people_income_filter["max"])
+        df = df[
+            (df["market_income_per_week"] >= thres_min)
+            & (df["market_income_per_week"] <= thres_max)
+        ]
+
+    # ---------------------------------------------
+    # Step 5: Obtain working hours
     # ---------------------------------------------
     df = obtain_working_hours(df)
     df["working_hours"] = where(
@@ -78,9 +94,9 @@ def tawa_data_preprocess(
     )
 
     # ---------------------------------------------
-    # Step 5: Data quality control
+    # Step 6: Data quality control
     # ---------------------------------------------
-    # 5.1: Remove outlier households 
+    # 6.1: Remove outlier households 
     if apply_household_income_filter is not None:
         df["household_market_income_per_week"] = df.groupby("household_id")[
             "market_income_per_week"
@@ -110,13 +126,15 @@ def tawa_data_preprocess(
         df = df.sort_values(
             ["household_id", "market_income_per_week"], ascending=[True, False]
         )
-
         if apply_earner_type_filter.lower() == "primary":
+            # df_primary = df[df["gender"] == "Male"]
             df_primary = df.groupby("household_id").nth(0).reset_index()
             selected_id = df_primary["id"].unique()
-        elif apply_earner_type_filter.lower() == "secondary":
-            df_secondary = df.groupby("household_id").nth(1).reset_index()
-            selected_id = df_secondary["id"].unique()
+        elif apply_earner_type_filter.lower() == "others":
+            df_rest = df.groupby("household_id").nth(slice(1, None)).reset_index()
+            # df_secondary = df[df["gender"] == "Female"]
+            # df_secondary = df.groupby("household_id").nth(1).reset_index()
+            selected_id = df_rest["id"].unique()
 
         df['selected'] = where(df['id'].isin(selected_id), True, False)
     else:

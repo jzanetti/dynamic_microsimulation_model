@@ -96,7 +96,7 @@ prepare_ruf_inputs <- function(df_input,
     hh_merged[, is_chosen := fifelse(scenario_id == best_scenario, 1L, 0L)]
     
     # --- Logic 2: Calculate Finance ---
-    hh_merged[, income := fifelse(option_hours > 0, wage * option_hours, 0)]
+    hh_merged[, income := fifelse(option_hours > 0, wage * option_hours, 1e-9)]
     hh_merged[, leisure_val := (total_hours - option_hours) * leisure_value]
     
     # Household Income (sum of income per scenario)
@@ -124,6 +124,9 @@ prepare_ruf_inputs <- function(df_input,
   
   cols_to_scale <- c("income", "income_hhld", "leisure")
   results[, (cols_to_scale) := lapply(.SD, function(x) x / data_scaler), .SDcols = cols_to_scale]
+  
+  results <- results %>% 
+    arrange(household_id, people_id, option_hours)
   
   write_parquet(as.data.frame(results), data_output_path)
   

@@ -8,25 +8,28 @@ from logging import getLogger
 from process.Python.data.input import prepare_ruf_inputs
 from pyarrow.parquet import read_table as pq_read_table
 from os.path import exists
-
-
+from process.Python import RUN_LOG
 from process.Python.data.filename import create_hash_filename
 
 logger = getLogger()
 
 
 def predict(data: DataFrame, params: dict, method: str = "top30", scaler: float = 1.0):
-    scaled_income_hhld = data["income_hhld"] * scaler
-    scaled_income = data["income"] * scaler
-    scaled_leisure = data["leisure"]
 
-    data["utlity"] = (
-        params["beta_income_hhld"] * scaled_income_hhld
-        + params["beta_income_hhld2"] * (scaled_income_hhld**2)
-        + params["beta_leisure"] * scaled_leisure
-        + params["beta_leisure2"] * (scaled_leisure**2)
-        + params["beta_interaction"] * (scaled_income * scaled_leisure)
+    scaled_leisure = data["leisure"]
+    data["utlity"] = quadratic_utility(
+        (
+            params["beta_income_hhld"], 
+            params["beta_income_hhld2"], 
+            params["beta_leisure"], 
+            params["beta_leisure2"], 
+            params["beta_interaction"]
+        ), 
+        data["income"] * scaler, 
+        data["income_hhld"] * scaler, 
+        scaled_leisure
     )
+
     if method == "top30": # the threshold is from top 30%
         utility_thresholds = data.groupby(
             "people_id")["utlity"].transform(lambda x: x.quantile(1 - 0.3))
@@ -69,22 +72,30 @@ def negative_log_likelihood(
     choice_mask = df["is_chosen"].values.reshape((n_people, options_n))
     chosen_probs = probs[choice_mask == 1]
 
-    # 5. Sum Log Likelihoods
     return -np_sum(np_log(chosen_probs + 1e-10))
 
 
-def quadratic_utility(params, income, income_hhld, leisure, show_debug = False):
+def quadratic_utility(params, income, income_hhld, leisure, show_debug = False, apply_log: bool = RUN_LOG):
     """
     Utility Function: U = b_c*C + b_c2*C^2 + b_l*L + b_l2*L^2 + b_cl*(C*L)
     """
     b_hhld_i, b_hhld_i2, b_l, b_l2, b_cl = params
 
+    if apply_log:
+        income_hhld_to_use = np_log(income_hhld)
+        income_to_use = np_log(income)
+        leisure_to_use = np_log(leisure)
+    else:
+        income_hhld_to_use = income_hhld
+        income_to_use = income
+        leisure_to_use = leisure
+    
     util = (
-        b_hhld_i * income_hhld
-        + b_hhld_i2 * (income_hhld**2)
-        + b_l * leisure
-        + b_l2 * (leisure**2)
-        + b_cl * (income * leisure)
+        b_hhld_i * income_hhld_to_use
+        + b_hhld_i2 * (income_hhld_to_use**2)
+        + b_l * leisure_to_use
+        + b_l2 * (leisure_to_use**2)
+        + b_cl * (income_to_use * leisure_to_use)
     )
 
     if show_debug:
@@ -101,11 +112,11 @@ def utility_func(
     income_name: dict or None = {"market_income": "test"},
     working_hours_name: str = "working_hours",
     params_dict: dict = {
-        "beta_income_hhld": {"initial": 1.0, "bound": (1e-6, None)},
-        "beta_income_hhld2": {"initial": -0.01, "bound": (None, -1e-6)},
-        "beta_leisure": {"initial": 1.0, "bound": (1e-6, None)},
-        "beta_leisure2": {"initial": -0.01, "bound": (None, -1e-6)},
-        "beta_interaction": {"initial": 1.0, "bound": (None, None)}
+        "beta_income_hhld": {"initial": 0.1, "bound": (1e-6, 10.0)},
+        "beta_income_hhld2": {"initial": -0.01, "bound": (-10.0, -1e-6)},
+        "beta_leisure": {"initial": 0.1, "bound": (1e-6, 10.0)},
+        "beta_leisure2": {"initial": -0.01, "bound": (-10.0, -1e-6)},
+        "beta_interaction": {"initial": 0.1, "bound": (-10.0, 10.0)}
     },
     recreate_data: bool = True
 ):
@@ -159,6 +170,3 @@ def utility_func(
 
     logger.info(f"The model estimated paramaters are written to {model_output_path}")
     df.to_csv(model_output_path)
-
-    # logger.info(f"The model training data are written to {data_output_path}")
-    # pq_write_table(pa.Table.from_pandas(proc_data), data_output_path)

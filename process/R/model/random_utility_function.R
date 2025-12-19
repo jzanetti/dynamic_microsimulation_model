@@ -1,35 +1,38 @@
 
 predict <- function(data, params, method = "top30", scaler = 1.0) {
   
-  # create local scaled vectors for cleaner calculation
-  scaled_income_hhld <- data$income_hhld * scaler
-  scaled_income <- data$income * scaler
-  scaled_leisure <- data$leisure
-  
-  # Calculate Utility
-  data$utility <- (
-    params["beta_income_hhld"] * scaled_income_hhld +
-      params["beta_income_hhld2"] * (scaled_income_hhld^2) +
-      params["beta_leisure"] * scaled_leisure +
-      params["beta_leisure2"] * (scaled_leisure^2) +
-      params["beta_interaction"] * (scaled_income * scaled_leisure)
+  # 1. Prepare coefficients as a vector (matching the Python tuple)
+  coeffs <- c(
+    params[["beta_income_hhld"]],
+    params[["beta_income_hhld2"]],
+    params[["beta_leisure"]],
+    params[["beta_leisure2"]],
+    params[["beta_interaction"]]
   )
   
+  # 2. Calculate Utility
+  data <- data %>%
+    mutate(
+      utility = quadratic_utility(
+        coeffs,
+        income * scaler,
+        income_hhld * scaler,
+        leisure # scaled_leisure
+      )
+    )
+  
+  # 3. Filter based on method
   if (method == "top30") {
-    # Top 30% logic
+    # Calculate 70th percentile per person and filter
     predictions <- data %>%
       group_by(people_id) %>%
-      # 1 - 0.3 = 0.7 (70th percentile)
-      mutate(threshold = quantile(utility, probs = 0.7, na.rm = TRUE)) %>%
-      filter(utility >= threshold) %>%
-      ungroup() %>%
-      select(-threshold) # remove helper column
+      filter(utility >= quantile(utility, 0.7, na.rm = TRUE)) %>%
+      ungroup()
     
   } else {
-    # Max utility logic
+    # Select row with Max utility per person
     predictions <- data %>%
       group_by(people_id) %>%
-      # slice_max with n=1 extracts the row with the highest value
       slice_max(utility, n = 1, with_ties = FALSE) %>%
       ungroup()
   }
@@ -38,37 +41,13 @@ predict <- function(data, params, method = "top30", scaler = 1.0) {
 }
 
 
-quadratic_utility <- function(params, income, income_hhld, leisure, income_to_income_hhld) {
-  # Utility Function: U = b_c*C + b_c2*C^2 + b_l*L + b_l2*L^2 + b_cl*(C*L)
-  
-  # Unpack parameters (R vectors are indexed from 1)
-  b_hhld_i  <- params[1]
-  b_hhld_i2 <- params[2]
-  b_l       <- params[3]
-  b_l2      <- params[4]
-  b_cl      <- params[5]
-
-  util <- (
-    #b_hhld_i * income
-    #+ b_hhld_i2 * (income ^ 2)
-    b_hhld_i * income_hhld
-    + b_hhld_i2 * (income_hhld^2)
-    + b_l * leisure
-    + b_l2 * (leisure^2)
-    + b_cl * (income * leisure)
-  )
-  
-  return(util)
-}
-
 negative_log_likelihood <- function(params, df, options_n) {
   # 1. Calculate Utility for all rows
   V <- quadratic_utility(
     params, 
     df[["income"]], 
     df[["income_hhld"]], 
-    df[["leisure"]], 
-    df[["income_to_income_hhld"]]
+    df[["leisure"]]
   )
 
   # 2. Reshape to (Num_People, Options_N)
@@ -104,6 +83,48 @@ negative_log_likelihood <- function(params, df, options_n) {
   return(-sum(log(chosen_probs + 1e-10)))
 }
 
+quadratic_utility <- function(
+    params, 
+    income, 
+    income_hhld, 
+    leisure,          
+    show_debug = FALSE, 
+    apply_log = RUN_LOG) {
+  
+  b_hhld_i  <- params[1]
+  b_hhld_i2 <- params[2]
+  b_l       <- params[3]
+  b_l2      <- params[4]
+  b_cl      <- params[5]
+  
+  # Apply Log transformation if requested
+  if (apply_log) {
+    income_hhld_to_use <- log(income_hhld)
+    income_to_use      <- log(income)
+    leisure_to_use     <- log(leisure)
+  } else {
+    income_hhld_to_use <- income_hhld
+    income_to_use      <- income
+    leisure_to_use     <- leisure
+  }
+  
+  # Calculate Utility
+  util <- (
+    b_hhld_i * income_hhld_to_use +
+      b_hhld_i2 * (income_hhld_to_use^2) +
+      b_l * leisure_to_use +
+      b_l2 * (leisure_to_use^2) +
+      b_cl * (income_to_use * leisure_to_use)
+  )
+  
+  if (show_debug) {
+    print("Total util %f", sum(util, na.rm = TRUE))
+  }
+  
+  return(util)
+}
+
+
 utility_func <- function(
     df_input,
     params,
@@ -111,11 +132,11 @@ utility_func <- function(
     income_name = list("market_income" = "test"),
     working_hours_name = "working_hours",
     params_dict = list(
-      "beta_income_hhld"  = list("initial" = 1.0,  "bound" = c(1e-6, Inf)),
-      "beta_income_hhld2" = list("initial" = -0.01, "bound" = c(-Inf, -1e-6)),
-      "beta_leisure"      = list("initial" = 1.0,  "bound" = c(1e-6, Inf)),
-      "beta_leisure2"     = list("initial" = -0.01, "bound" = c(-Inf, -1e-6)),
-      "beta_interaction"  = list("initial" = 1.0,  "bound" = c(-Inf, Inf))
+      "beta_income_hhld"  = list("initial" = 0.1,  "bound" = c(1e-6, 10.0)),
+      "beta_income_hhld2" = list("initial" = -0.01, "bound" = c(-10.0, -1e-6)),
+      "beta_leisure"      = list("initial" = 0.1,  "bound" = c(1e-6, 10.0)),
+      "beta_leisure2"     = list("initial" = -0.01, "bound" = c(-10.0, -1e-6)),
+      "beta_interaction"  = list("initial" = 0.1,  "bound" = c(-10.0, 10.0))
     ),
     recreate_data = TRUE
 ) {

@@ -39,10 +39,13 @@ def plot_intermediate(input_params: dict, data_name: str, output_dir: str = "/tm
 
         highest_utility_accuracy = accuacry_results[accuacry_results["scores"] == "highest_utility_accuracy"]["value"].values[0]
         total_hrs_accuracy = accuacry_results[accuacry_results["scores"] == "total_hrs_accuracy"]["value"].values[0]
+        r2_mcfadden = accuacry_results[accuacry_results["scores"] == "r2_mcfadden"]["value"].values[0]
         accuacry_score_str = f"Total Utility Accuracy: " + \
             f"{round(highest_utility_accuracy, 2)} %, " + \
             "Total Hours Accuracy: " + \
-            f"{round(total_hrs_accuracy, 2)} %; "
+            f"{round(total_hrs_accuracy, 2)} %; " + \
+            "McFadden's R2: " + \
+            f"{round(r2_mcfadden, 2)}"
 
         subplots(figsize=(10, 6))
         plot(sensitivity_results["scaler"], sensitivity_results["full_time"], label=f"Full-time (Working hours >= {input_params["hours_options"][-1]}hr)")
@@ -69,6 +72,8 @@ def plot_intermediate(input_params: dict, data_name: str, output_dir: str = "/tm
         ylabel("Employment hours")
         savefig(output_path2, bbox_inches="tight")
         close()
+
+        print(f"The results are written with hashname: {filename_hash}")
 
 
 def plot_outputs(output_results: DataFrame, output_dir: str = ""):

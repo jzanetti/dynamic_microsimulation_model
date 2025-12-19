@@ -103,15 +103,16 @@ load_and_process_model <- function(input_params, force_rerun=FALSE, hes_path=TAW
     # Extract scalar scores
     highest_utility_accuracy <- accuracy_df[accuracy_df$scores == "highest_utility_accuracy", "value"][1]
     total_hrs_accuracy <- accuracy_df[accuracy_df$scores == "total_hrs_accuracy", "value"][1]
-    
-    score_summary <- sprintf("Util Acc: %.2f%% | Hrs Acc: %.2f%%", round(highest_utility_accuracy, 2), round(total_hrs_accuracy, 2))
+    r2_mcfadden <- accuracy_df[accuracy_df$scores == "r2_mcfadden", "value"][1]
+    score_summary <- sprintf("Util Acc: %.2f%% | Hrs Acc: %.2f%% | R2: %.2f", round(highest_utility_accuracy, 2), round(total_hrs_accuracy, 2), round(r2_mcfadden, 2))
     
     # Return list (equivalent to Python Dict)
     return(list(
       "sensitivity" = sensitivity_df, 
       "metrics" = list(
         "utility_acc" = highest_utility_accuracy,
-        "hours_acc" = total_hrs_accuracy
+        "hours_acc" = total_hrs_accuracy,
+        "r2" = r2_mcfadden
       ),
       "score_str" = score_summary,
       "params" = input_params,
@@ -230,15 +231,15 @@ ui <- page_fluid(
                         "value_filter"
                       ),
                       div(class = "row mb-2",
-                          div(class = "col", numericInput("input_inc_min", NULL, value = 0.1, step = 0.05)),
-                          div(class = "col", numericInput("input_inc_max", NULL, value = 0.7, step = 0.05))
+                          div(class = "col", numericInput("input_inc_min", NULL, value = 0.1, step = 0.01)),
+                          div(class = "col", numericInput("input_inc_max", NULL, value = 0.7, step = 0.01))
                       ),
                       
                       hr(),
                       
                       tags$label("Earner type:"),
                       selectInput("input_earner_type", NULL, 
-                                  choices = c("All", "Primary", "Secondary"), 
+                                  choices = c("All", "Primary", "Others"), 
                                   selected = "All", selectize = FALSE, width = "100%"),
                       div(class="mb-3"),
                       
@@ -447,7 +448,8 @@ server <- function(input, output, session) {
       tags$th("Household filter"),
       tags$th("Earner"),
       tags$th("Utility Acc (%)"),
-      tags$th("Hours Acc (%)")
+      tags$th("Hours Acc (%)"),
+      tags$th("R2")
     ))
     
     # Define Table Rows
@@ -473,7 +475,8 @@ server <- function(input, output, session) {
               tags$td(as.character(hh_filter_display)),
               tags$td(as.character(earner_display)),
               tags$td(sprintf("%.2f%%", metrics$utility_acc)),
-              tags$td(sprintf("%.2f%%", metrics$hours_acc))
+              tags$td(sprintf("%.2f%%", metrics$hours_acc)),
+              tags$td(sprintf("%.2f", metrics$r2))
       )
     })
     
