@@ -43,7 +43,7 @@ def prepare_ruf_inputs(
     hours_options: list, 
     total_hours: int, 
     leisure_value: float, 
-    income_name: dict, 
+    income_name: str, 
     working_hours_name: str, 
     data_scaler: float = 1000.0,
     data_output_path: str = None
@@ -56,7 +56,7 @@ def prepare_ruf_inputs(
                 "id",
                 "household_id",
                 "selected",
-                income_name["market"],
+                income_name,
                 working_hours_name,
             ]
         ]
@@ -93,7 +93,7 @@ def prepare_ruf_inputs(
             proc_hhld_income = 0
             for index2, proc_hours in enumerate(proc_combination):
                 proc_person = proc_hhld.iloc[index2]
-                person_wage = proc_person[income_name["market"]]
+                person_wage = proc_person[income_name]
                 leisure_hours = total_hours - proc_hours
 
                 if proc_hours > 0:

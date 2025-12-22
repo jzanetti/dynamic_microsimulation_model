@@ -17,3 +17,4 @@ etc/app/*.png
 etc/app/*.csv
 etc/app/*.parquet
 etc/app/runs
+etc/app/TY25_BEFU24_SQ.csv.gz

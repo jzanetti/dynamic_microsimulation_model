@@ -2,7 +2,7 @@
 from pyarrow.parquet import read_table as pq_read_table
 from pandas import read_csv
 from pandas import DataFrame
-from numpy import arange, array
+from numpy import arange, array, histogram
 from numpy import where, isclose, mean
 from process.Python.model.random_utlity_function import predict as ruf_predict
 from process.Python.vis import plot_intermediate
@@ -134,6 +134,17 @@ def run_ruf_validation(input_params: dict, output_dir: str, method=RUF_METHOD):
     else:
         pred_hrs = predicted_choices[predicted_choices["is_chosen"] == 1]["option_hours"].sum()
 
+    # 4. Show calibration distribution
+    counts, bin_edges = histogram(data["calibrated_err"], bins=50)
+    err_dist = DataFrame({
+        'bin_start': bin_edges[:-1],
+        'bin_end': bin_edges[1:],
+        'count': counts
+    })
+    output_path = f"{output_dir}/validation_err_{filename_hash}.csv"
+    logger.info(f"Validation (distribution) is written to {output_path}")
+    err_dist.to_csv(output_path, index=False)
+
     scores = DataFrame(
         {
             "scores": ["highest_utility_accuracy", "total_hrs_accuracy", "r2_mcfadden"],
@@ -141,4 +152,7 @@ def run_ruf_validation(input_params: dict, output_dir: str, method=RUF_METHOD):
         }
     )
 
-    scores.to_csv(f"{output_dir}/validation_score_{filename_hash}.csv")
+    output_path = f"{output_dir}/validation_score_{filename_hash}.csv"
+
+    logger.info(f"Validation (score) is written to {output_path}")
+    scores.to_csv(output_path, index=False)

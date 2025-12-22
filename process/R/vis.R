@@ -1,11 +1,4 @@
 
-# Ensure directory exists
-ensure_dir <- function(path) {
-  if (!dir.exists(path)) {
-    dir.create(path, recursive = TRUE)
-  }
-}
-
 plot_intermediate <- function(input_params, data_name, output_dir = "/tmp") {
   
   if (data_name == "utility_func") {
@@ -15,13 +8,16 @@ plot_intermediate <- function(input_params, data_name, output_dir = "/tmp") {
     # Define output paths
     output_path1 <- file.path(output_dir, paste0("utility_employment_rate_", filename_hash, ".png"))
     output_path2 <- file.path(output_dir, paste0("ruf_total_employment_hrs_", filename_hash, ".png"))
+    output_path3 <- file.path(output_dir, paste0("ruf_validation_err_dist_", filename_hash, ".png"))
     
     # Read Data
     sens_path <- file.path(output_dir, paste0("sensitivity_tests_", filename_hash, ".csv"))
     acc_path <- file.path(output_dir, paste0("validation_score_", filename_hash, ".csv"))
+    err_dist_path <- file.path(output_dir, paste0("validation_err_", filename_hash, ".csv"))
     
     sensitivity_results <- read_csv(sens_path, show_col_types = FALSE)
     accuracy_results <- read_csv(acc_path, show_col_types = FALSE)
+    err_dist_results <- read_csv(err_dist_path, show_col_types = FALSE)
     
     # Extract Accuracy Scores
     highest_utility_accuracy <- accuracy_results %>% 
@@ -89,6 +85,17 @@ plot_intermediate <- function(input_params, data_name, output_dir = "/tmp") {
     # Save Plot 2
     ggsave(output_path2, plot = p2, width = 10, height = 6, bg = "white")
     print(paste0("The employment hours figure are written into", output_path2))
+    
+    # Plot 3: Error Distribution Histogram
+    p3 <- ggplot(err_dist_results) +
+      geom_rect(aes(xmin = bin_start, xmax = bin_end, ymin = 0, ymax = count),
+                fill = "steelblue", color = "black", alpha = 0.7) +
+      theme_minimal() +
+      labs(x = "Error", y = "Count", title = "Validation Error Distribution")
+    
+    ggsave(output_path3, plot = p3, width = 10, height = 6, bg = "white")
+    print(paste0("The error distributions figure are written into", output_path3))
+    
   }
 }
 

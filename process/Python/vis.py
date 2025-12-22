@@ -11,7 +11,7 @@ from matplotlib.pyplot import (
     ylabel,
     axvline,
     axhline,
-    gca
+    bar
 )
 import matplotlib.ticker as mtick
 from matplotlib.ticker import MaxNLocator
@@ -33,9 +33,11 @@ def plot_intermediate(input_params: dict, data_name: str, output_dir: str = "/tm
         filename_hash = create_hash_filename(input_params)
         output_path1 = join(output_dir, f"utility_employment_rate_{filename_hash}.png")
         output_path2 = join(output_dir, f"ruf_total_employment_hrs_{filename_hash}.png")
+        output_path3 = join(output_dir, f"ruf_validation_err_dist_{filename_hash}.png")
 
         sensitivity_results = read_csv(f"{output_dir}/sensitivity_tests_{filename_hash}.csv")
         accuacry_results = read_csv(f"{output_dir}/validation_score_{filename_hash}.csv")
+        err_dist_results = read_csv(f"{output_dir}/validation_err_{filename_hash}.csv")
 
         highest_utility_accuracy = accuacry_results[accuacry_results["scores"] == "highest_utility_accuracy"]["value"].values[0]
         total_hrs_accuracy = accuacry_results[accuacry_results["scores"] == "total_hrs_accuracy"]["value"].values[0]
@@ -71,6 +73,21 @@ def plot_intermediate(input_params: dict, data_name: str, output_dir: str = "/tm
         xlabel("Income Scaler")
         ylabel("Employment hours")
         savefig(output_path2, bbox_inches="tight")
+        close()
+
+        # This both plots the histogram and returns the data
+        subplots(figsize=(10, 6))
+        bin_width = err_dist_results['bin_end'] - err_dist_results['bin_start']
+
+        bar(
+            err_dist_results['bin_start'], 
+            err_dist_results['count'], 
+            width=bin_width, 
+            align='edge', 
+            edgecolor='black',
+            alpha=0.7
+        )
+        savefig(output_path3, bbox_inches="tight")
         close()
 
         print(f"The results are written with hashname: {filename_hash}")

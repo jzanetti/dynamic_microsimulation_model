@@ -30,8 +30,108 @@ create_inputs <- function(data_dir, required_data_types = c("pop"), data_type = 
   return (inputs)
 }
 
-
 prepare_ruf_inputs <- function(df_input, 
+                               hours_options, 
+                               total_hours, 
+                               leisure_value, 
+                               income_name, 
+                               working_hours_name, 
+                               data_scaler = 1000.0,
+                               data_output_path = NULL) {
+  
+
+  # 1. Convert to data.table and select relevant columns
+  dt <- as.data.table(df_input)[, .(
+    id, 
+    household_id, 
+    selected, 
+    income = get(income_name), 
+    working_hours = get(working_hours_name)
+  )]
+  
+  all_household_ids <- unique(dt$household_id)
+  long_data_list <- list()
+  
+  # 2. Iterate through households
+  for (i in seq_along(all_household_ids)) {
+    proc_hhld_id <- all_household_ids[i]
+    
+    # Progress logging
+    if (i %% 10 == 0) {
+      message(sprintf("Processing input: %.3f%%", 100 * i / length(all_household_ids)))
+    }
+    
+    proc_hhld <- dt[household_id == proc_hhld_id]
+    num_people <- nrow(proc_hhld)
+    
+    # 3. Generate all possible hours combinations
+    # Equivalent to Python's iter_product(hours_options, repeat=num_people)
+    combos_list <- replicate(num_people, hours_options, simplify = FALSE)
+    all_possible_combinations <- as.matrix(do.call(expand.grid, combos_list))
+    
+    # 4. Find the 'chosen' combination (minimum squared distance)
+    # This replicates the min(key=lambda...) logic
+    actual_hours <- proc_hhld$working_hours
+    distances <- apply(all_possible_combinations, 1, function(row) {
+      sum((row - actual_hours)^2)
+    })
+    chosen_idx <- which.min(distances)
+    chosen_combination <- all_possible_combinations[chosen_idx, ]
+    
+    # 5. Process each combination
+    for (j in 1:nrow(all_possible_combinations)) {
+      proc_combination <- all_possible_combinations[j, ]
+      is_chosen <- if (all(proc_combination == chosen_combination)) 1 else 0
+      
+      # Calculate incomes and leisure
+      # Using 1e-9 for zero hours to match Python logic
+      market_incomes <- ifelse(proc_combination > 0, 
+                               proc_hhld$income * proc_combination, 
+                               1e-9)
+      
+      hhld_income <- sum(market_incomes)
+      if (hhld_income == 0) hhld_income <- 1e-9
+      
+      leisure_hours <- (total_hours - proc_combination) * leisure_value
+      
+      # Only keep data for 'selected' individuals
+      selected_idx <- which(proc_hhld$selected)
+      
+      if (length(selected_idx) > 0) {
+        row_data <- data.table(
+          household_id = proc_hhld_id,
+          people_id = proc_hhld$id[selected_idx],
+          option_hours = proc_combination[selected_idx],
+          is_chosen = is_chosen,
+          income = market_incomes[selected_idx],
+          leisure = leisure_hours[selected_idx],
+          income_hhld = hhld_income
+        )
+        long_data_list[[length(long_data_list) + 1]] <- row_data
+      }
+    }
+  }
+  
+  # 6. Combine and Post-Process
+  results <- rbindlist(long_data_list)
+  
+  # Scaling
+  cols_to_scale <- c("income", "income_hhld", "leisure")
+  results[, (cols_to_scale) := lapply(.SD, function(x) x / data_scaler), .SDcols = cols_to_scale]
+  
+  # Sorting
+  setorder(results, household_id, people_id, option_hours)
+  
+  # 7. Write to Parquet
+  if (!is.null(data_output_path)) {
+    write_parquet(results, data_output_path)
+  }
+  
+  return(results)
+}
+
+
+prepare_ruf_inputs2 <- function(df_input, 
                                hours_options, 
                                total_hours, 
                                leisure_value, 

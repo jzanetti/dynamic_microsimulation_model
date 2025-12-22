@@ -29,34 +29,42 @@ input_params <- list(
 )
 
 
-run_model = TRUE
+run_model = FALSE
+run_calib = FALSE
 run_validation = TRUE
 run_sensitivity = TRUE
 output_dir = "etc/app/runs"
 
 if (run_model) {
   
-  hes_data = read.csv("etc/app/Synthetic-HES23-single-period.csv")
+  tawa_data <- list(
+    input = read.csv("etc/app/Synthetic-HES23-single-period.csv"),
+    output = read.csv("C:/Work/Github/AIMapp/apps/TAWAapp/TY25_BEFU24_SQ.csv.gz")
+  )
   
   data = data_tawa_env$tawa_data_preprocess(
-      hes_data,
+      tawa_data,
       min_hourly_wage=input_params[["min_hourly_wage"]],
       hours_options=input_params[["hours_options"]],
       exclude_seniors=input_params[["exclude_seniors"]],
       apply_household_income_filter = input_params[["apply_household_income_filter"]],
       apply_earner_type_filter=input_params[["apply_earner_type_filter"]],
       apply_household_size_filter = input_params[["apply_household_size_filter"]])
-  
+
   model_ruf_env$utility_func(
        data,
        input_params,
-       income_name=list("market" = "market_income_per_hour"),
+       income_name="income_per_hour",
        working_hours_name="working_hours",
        output_dir = output_dir,
-       recreate_data = FALSE
+       recreate_data = TRUE
   )
 }
 
+if (run_calib){
+  model_ruf_env$run_ruf_calibrate(input_params, output_dir=output_dir)
+}
+  
 if (run_validation) {
   model_validation_env$run_ruf_validation(input_params, output_dir=output_dir)
 }

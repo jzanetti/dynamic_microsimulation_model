@@ -1,9 +1,113 @@
 
 
-# Assuming 'obtain_working_hours' is available in your R environment
-# source("process/R/data/sample.R")
+tawa_data_preprocess <- function(tawa_data, 
+                                 hours_options = c(0, 20, 40),
+                                 min_hourly_wage = 23.0, 
+                                 exclude_seniors = FALSE,
+                                 income_types = c("P_Income_Disposable"),
+                                 apply_earner_type_filter = NULL,
+                                 apply_household_income_filter = list(min = 0.3, max = 0.7),
+                                 apply_people_income_filter = list(min = 0.1, max = 0.9),
+                                 apply_household_size_filter = list(
+                                   H_Counts_Adults = c(2, 2),
+                                   H_Counts_DependentKids = c(1, 3)
+                                 ),
+                                 yearly_income = TRUE) {
+  
+  # --- Step 0: Merge Input and Output ---
+  df_input <- as.data.table(tawa_data$input)[, .(
+    snz_hes_hhld_uid, snz_hes_uid, H_Counts_Adults, 
+    H_Counts_DependentKids, P_Attributes_Age, 
+    P_Attributes_Sex, P_Job_TotalHoursPerWeek
+  )]
+  
+  df_output <- as.data.table(tawa_data$output)[, .(
+    snz_hes_hhld_uid, snz_hes_uid, P_Income_Disposable
+  )]
+  
+  df <- merge(df_input, df_output, by = c("snz_hes_uid", "snz_hes_hhld_uid"))
+  
+  # --- Step 1: Apply Household Size & Senior Filter ---
+  if (!is.null(apply_household_size_filter)) {
+    for (col in names(apply_household_size_filter)) {
+      limits <- apply_household_size_filter[[col]]
+      df <- df[get(col) >= limits[1] & get(col) <= limits[2]]
+    }
+  }
+  
+  if (exclude_seniors) {
+    df <- df[P_Attributes_Age < 65]
+  }
+  
+  # --- Step 2: Age Filter ---
+  df <- df[P_Attributes_Age > 18]
+  
+  # --- Step 3: Income Calculation & Renaming ---
+  # Sum specified income types across rows
+  df[, P_Total_income := rowSums(.SD), .SDcols = income_types]
+  
+  if (yearly_income) {
+    df[, P_Total_income := P_Total_income / 52.0]
+  }
+  
+  # Rename and select columns
+  setnames(df, 
+           old = c("snz_hes_hhld_uid", "snz_hes_uid", "P_Attributes_Age", 
+                   "P_Attributes_Sex", "P_Total_income", "P_Job_TotalHoursPerWeek"),
+           new = c("household_id", "id", "age", "gender", "income_per_week", "working_hours"))
+  
+  df <- df[, .(household_id, id, age, gender, income_per_week, working_hours)]
+  
+  # Map gender
+  df[, gender := ifelse(gender == 1, "Male", "Female")]
+  
+  # --- Step 4: Person Level Income Outliers ---
+  if (!is.null(apply_people_income_filter)) {
+    quants <- quantile(df$income_per_week, c(apply_people_income_filter$min, apply_people_income_filter$max))
+    df <- df[income_per_week >= quants[1] & income_per_week <= quants[2]]
+  }
+  
+  # --- Step 5: Working Hours ---
+  df <- data_sample_env$obtain_working_hours(df) 
+  df[, working_hours := ifelse(working_hours < hours_options[2], 1e-9, working_hours)]
+  
+  # --- Step 6: Household Level Quality Control ---
+  if (!is.null(apply_household_income_filter)) {
+    # Transform sum equivalent:
+    df[, household_income_per_week := sum(income_per_week), by = household_id]
+    
+    h_quants <- quantile(df$household_income_per_week, 
+                         c(apply_household_income_filter$min, apply_household_income_filter$max))
+    df <- df[household_income_per_week >= h_quants[1] & household_income_per_week <= h_quants[2]]
+  }
+  
+  # Correct wage for non-workers
+  df[, income_per_hour := ifelse(working_hours == 1e-9, 
+                                 min_hourly_wage, 
+                                 income_per_week / working_hours)]
+  
+  # --- Step 7: Earner Type Logic ---
+  if (!is.null(apply_earner_type_filter)) {
+    # Sort by household and then income (descending)
+    setorder(df, household_id, -income_per_week)
+    
+    if (tolower(apply_earner_type_filter) == "primary") {
+      # Get the first person in each group
+      selected_ids <- df[, .SD[1], by = household_id]$id
+    } else if (tolower(apply_earner_type_filter) == "others") {
+      # Get everyone EXCEPT the first person
+      selected_ids <- df[, .SD[-1], by = household_id]$id
+    }
+    
+    df[, selected := id %in% selected_ids]
+  } else {
+    df[, selected := TRUE]
+  }
+  
+  return(df)
+}
 
-tawa_data_preprocess <- function(
+tawa_data_preprocess2 <- function(
     df, 
     hours_options = c(0, 20, 40),
     min_hourly_wage = 23.0, 

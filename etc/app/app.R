@@ -1,4 +1,10 @@
-TAWA_DB <- "Synthetic-HES23-single-period.csv"
+# TAWA_DB <- "Synthetic-HES23-single-period.csv"
+
+TAWA_DB <- list(
+  "input" = "Synthetic-HES23-single-period.csv",
+  "output" = "TY25_BEFU24_SQ.csv.gz"
+)
+
 OUTPUT_DIR <- "runs"
 SCRIPT_DIR <- "../.."
 
@@ -65,11 +71,13 @@ load_and_process_model <- function(input_params, force_rerun=FALSE, hes_path=TAW
   
   if (force_rerun || !file.exists(sens_path_check)) {
     # 1. Read Data
-    hes_data <- read.csv(hes_path)
-    
+    tawa_data <- list(
+      input = read.csv(TAWA_DB$input),
+      output = read.csv(TAWA_DB$output)
+    )
     # 2. Preprocess
     data <- data_tawa_env$tawa_data_preprocess(
-      hes_data,
+      tawa_data,
       min_hourly_wage = input_params$min_hourly_wage,
       hours_options = input_params$hours_options,
       exclude_seniors = input_params$exclude_seniors,
@@ -82,13 +90,14 @@ load_and_process_model <- function(input_params, force_rerun=FALSE, hes_path=TAW
     model_ruf_env$utility_func(
       data,
       input_params,
-      income_name = list("market" = "market_income_per_hour"),
+      income_name = "income_per_hour",
       working_hours_name = "working_hours",
       output_dir = output_dir,
       recreate_data = TRUE
     )
     
     # 4. Validation & Sensitivity
+    model_ruf_env$run_ruf_calibrate(input_params, output_dir=output_dir)
     model_validation_env$run_ruf_validation(input_params, output_dir = output_dir)
     model_validation_env$run_ruf_sensitivity(input_params, output_dir = output_dir)
   }

@@ -1,40 +1,123 @@
 
-predict <- function(data, params, method = "top30", scaler = 1.0) {
+
+
+cal_utility <- function(data, params, income_scaler = 1.0) {
+  # 1. Ensure data is a data.table for in-place modification
+  if (!is.data.table(data)) {
+    data <- as.data.table(data)
+  }
   
-  # 1. Prepare coefficients as a vector (matching the Python tuple)
-  coeffs <- c(
-    params[["beta_income_hhld"]],
-    params[["beta_income_hhld2"]],
-    params[["beta_leisure"]],
-    params[["beta_leisure2"]],
-    params[["beta_interaction"]]
-  )
+  # 2. Extract parameters into a local list or vector for readability
+  params <- c(params[["beta_income_hhld"]],
+              params[["beta_income_hhld2"]],
+              params[["beta_leisure"]],
+              params[["beta_leisure2"]],
+              params[["beta_interaction"]])
   
-  # 2. Calculate Utility
-  data <- data %>%
-    mutate(
-      utility = quadratic_utility(
-        coeffs,
-        income * scaler,
-        income_hhld * scaler,
-        leisure # scaled_leisure
-      )
-    )
+  # 3. Calculate Utility
+  data[, utility := quadratic_utility(
+    params,
+    income * income_scaler,
+    income_hhld * income_scaler,
+    leisure
+  )]
   
-  # 3. Filter based on method
-  if (method == "top30") {
-    # Calculate 70th percentile per person and filter
-    predictions <- data %>%
-      group_by(people_id) %>%
-      filter(utility >= quantile(utility, 0.7, na.rm = TRUE)) %>%
-      ungroup()
+  # 4. Handle Calibration
+  if ("calibrated_err" %in% names(data)) {
+    data[, utility_calibrated := utility + calibrated_err]
+  }
+  
+  return(data)
+}
+
+run_ruf_calibrate <- function(input_params, output_dir) {
+  
+  # 1. Helper function for drawing Truncated Gumbel errors
+  # This replicates the _obtain_err logic but is vectorized for speed
+  obtain_err <- function(utility, is_chosen) {
+    # Identify the observed choice
+    k_idx <- which(is_chosen == 1)
+    V_k <- utility[k_idx]
     
+    # Draw error for chosen alternative (Standard Gumbel)
+    # Gumbel(0,1) quantile function: -log(-log(u))
+    u_k <- runif(1, 0, 1)
+    eps_k <- -log(-log(u_k))
+    
+    # Initialize error vector
+    epsilons <- numeric(length(utility))
+    epsilons[k_idx] <- eps_k
+    
+    # Indices for unchosen alternatives
+    j_indices <- which(is_chosen == 0)
+    
+    for (j in j_indices) {
+      V_j <- utility[j]
+      u_j <- runif(1, 0, 1)
+      
+      # Upper bound for the unchosen error to ensure V_k + eps_k > V_j + eps_j
+      threshold <- eps_k + V_k - V_j
+      
+      # Truncated Gumbel draw
+      # Replicating Python: -log(exp(-threshold) - log(u_j))
+      epsilons[j] <- -log(exp(-threshold) - log(u_j))
+    }
+    
+    return(epsilons)
+  }
+  
+  print("Calibrating the RUF function ...")
+  # 2. Setup Filenames (using md5 for consistency)
+  filename_hash <- data_filename_env$create_hash_filename(input_params)
+  data_path <- file.path(output_dir, paste0("utility_func_data_", filename_hash, ".parquet"))
+  param_path <- file.path(output_dir, paste0("utility_func_parameters_", filename_hash, ".csv"))
+  
+  # 3. Load Data
+  data <- as.data.table(read_parquet(data_path))
+  params_df <- fread(param_path)
+  
+  # Convert params DF to a named list
+  params <- setNames(as.list(params_df$Value), params_df$parameter)
+
+  # 4. Initial Utility Calculation
+  data <- cal_utility(data, params)
+  
+  # 5. Apply Calibration (Group by person)
+  data[, calibrated_err := obtain_err(utility, is_chosen), by = people_id]
+  
+  # 6. Final cleanup and export
+  data[, utility := NULL]
+  
+  write_parquet(data, data_path)
+  print(sprintf("Calibration complete. Results saved with hash: %s", filename_hash))
+}
+
+predict_ruf <- function(data, 
+                        params, 
+                        method = "top30", 
+                        scaler = 1.0) {
+  
+  # 1. Ensure data is a data.table
+  if (!is.data.table(data)) {
+    data <- as.data.table(data)
+  }
+  
+  # 2. Calculate utility
+  data <- cal_utility(data, params, income_scaler = scaler)
+  
+  # 3. Determine which utility column to use
+  utility_col <- "utility"
+  if ("utility_calibrated" %in% names(data)) {
+    utility_col <- "utility_calibrated"
+  }
+  
+  # 4. Apply prediction logic
+  if (method == "top30") {
+    data[, threshold := quantile(get(utility_col), probs = 0.7), by = people_id]
+    predictions <- data[get(utility_col) >= threshold]
+    data[, threshold := NULL]
   } else {
-    # Select row with Max utility per person
-    predictions <- data %>%
-      group_by(people_id) %>%
-      slice_max(utility, n = 1, with_ties = FALSE) %>%
-      ungroup()
+    predictions <- data[, .SD[which.max(get(utility_col))], by = id]
   }
   
   return(predictions)
@@ -129,14 +212,14 @@ utility_func <- function(
     df_input,
     params,
     output_dir = "",
-    income_name = list("market_income" = "test"),
+    income_name = "income_per_hour",
     working_hours_name = "working_hours",
     params_dict = list(
-      "beta_income_hhld"  = list("initial" = 0.1,  "bound" = c(1e-6, 10.0)),
-      "beta_income_hhld2" = list("initial" = -0.01, "bound" = c(-10.0, -1e-6)),
-      "beta_leisure"      = list("initial" = 0.1,  "bound" = c(1e-6, 10.0)),
-      "beta_leisure2"     = list("initial" = -0.01, "bound" = c(-10.0, -1e-6)),
-      "beta_interaction"  = list("initial" = 0.1,  "bound" = c(-10.0, 10.0))
+      "beta_income_hhld"  = list("initial" = 0.1,  "bound" = c(1e-6, 15.0)),
+      "beta_income_hhld2" = list("initial" = -0.01, "bound" = c(-15.0, -1e-6)),
+      "beta_leisure"      = list("initial" = 0.1,  "bound" = c(1e-6, 15.0)),
+      "beta_leisure2"     = list("initial" = -0.01, "bound" = c(-15.0, -1e-6)),
+      "beta_interaction"  = list("initial" = 0.1,  "bound" = c(-15.0, 15.0))
     ),
     recreate_data = TRUE
 ) {

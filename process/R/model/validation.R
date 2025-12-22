@@ -15,7 +15,7 @@ run_ruf_sensitivity <- function(input_params,
   print(paste("Model estimated parameters are read from", model_output_path))
   model_params_df <- read_csv(model_output_path, show_col_types = FALSE)
   model_params <- setNames(model_params_df$Value, model_params_df$parameter)
-  
+
   print(paste("Model training data are read from", data_output_path))
   data_to_check <- read_parquet(data_output_path)
   
@@ -41,7 +41,7 @@ run_ruf_sensitivity <- function(input_params,
     print(paste("Processing sensitivity study for scaler:", scaler))
     
     # Assuming ruf_predict is loaded in the environment
-    predicted_choices <- model_ruf_env$predict(data_to_check, model_params, method = method, scaler = scaler)
+    predicted_choices <- model_ruf_env$predict_ruf(data_to_check, model_params, method = method, scaler = scaler)
     
     n_preds <- nrow(predicted_choices)
     
@@ -95,6 +95,78 @@ run_ruf_sensitivity <- function(input_params,
 
 
 run_ruf_validation <- function(input_params, output_dir, method = "top30") {
+  
+  # 0. Setup Filename and Load Data
+  filename_hash <- data_filename_env$create_hash_filename(input_params)
+  
+  data <- as.data.table(read_parquet(file.path(output_dir, paste0("utility_func_data_", filename_hash, ".parquet"))))
+  params_df <- fread(file.path(output_dir, paste0("utility_func_parameters_", filename_hash, ".csv")))
+  params <- setNames(as.list(params_df$Value), params_df$parameter)
+  
+  # 1. Calculate r2_mcfadden
+  # Get number of discrete choice alternatives per person
+  options_n <- length(unique(data$option_hours))
+  
+  # Prepare parameter vector for likelihood function
+  param_names <- c("beta_income_hhld", "beta_income_hhld2", "beta_leisure", 
+                   "beta_leisure2", "beta_interaction")
+  params_list <- unlist(params[param_names])
+  
+  # Calculate Log-Likelihoods
+  # Note: Assuming negative_log_likelihood() is defined in your R environment
+  ll_model <- -model_ruf_env$negative_log_likelihood(params_list, data, options_n)
+  
+  n_people <- nrow(data) / options_n
+  ll_null <- n_people * log(1 / options_n)
+  
+  r2_mcfadden <- 1 - (ll_model / ll_null)
+  
+  # 2. Calculate Utility Accuracy
+  predicted_choices <- model_ruf_env$predict_ruf(data, params, method = method)
+  
+  # pred_n: How many people did the model predict correctly?
+  # truth_n: Total number of observed choices
+  pred_n <- nrow(predicted_choices[is_chosen == 1])
+  truth_n <- nrow(data[is_chosen == 1])
+  
+  # 3. Calculate Employment Hours Accuracy
+  truth_hrs <- sum(data[is_chosen == 1, option_hours])
+  
+  if (method == "top30") {
+    pred_hrs <- sum(data[, .(mean_hrs = mean(option_hours)), by = people_id]$mean_hrs)
+  } else {
+    pred_hrs <- sum(predicted_choices[is_chosen == 1, option_hours])
+  }
+  
+  # 4. Show Calibration Distribution (The "values for export" part)
+  # hist() with plot=FALSE is the R equivalent of np.histogram
+  h_obj <- hist(data$calibrated_err, breaks = 50, plot = FALSE)
+  
+  err_dist <- data.table(
+    bin_start = h_obj$breaks[-length(h_obj$breaks)],
+    bin_end   = h_obj$breaks[-1],
+    count     = h_obj$counts
+  )
+  
+  err_dist_path <- file.path(output_dir, paste0("validation_err_", filename_hash, ".csv"))
+  fwrite(err_dist, err_dist_path)
+  print(paste("Validation (distribution) is written to", err_dist_path))
+  
+  # 5. Compile Scores
+  scores <- data.table(
+    scores = c("highest_utility_accuracy", "total_hrs_accuracy", "r2_mcfadden"),
+    value  = c(100.0 * pred_n / truth_n, 100.0 * pred_hrs / truth_hrs, r2_mcfadden)
+  )
+  
+  scores_path <- file.path(output_dir, paste0("validation_score_", filename_hash, ".csv"))
+  fwrite(scores, scores_path)
+  print(paste("Validation (score) is written to", scores_path))
+  
+  return(scores)
+}
+
+
+run_ruf_validation2 <- function(input_params, output_dir, method = "top30") {
   
   filename_hash <- data_filename_env$create_hash_filename(input_params)
   

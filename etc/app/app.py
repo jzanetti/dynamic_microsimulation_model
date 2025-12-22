@@ -6,7 +6,7 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from os.path import join
 
-from process.Python.model.random_utlity_function import utility_func
+from process.Python.model.random_utlity_function import utility_func, run_ruf_calibrate
 from process.Python.model.validation import run_ruf_validation, run_ruf_sensitivity
 from process.Python.data.tawa import tawa_data_preprocess
 from process.Python.data.filename import create_hash_filename
@@ -31,9 +31,13 @@ HH_SIZE_PRESETS = {
     }
 }
 
-TAWA_DB = "etc/app/Synthetic-HES23-single-period.csv"
+# TAWA_DB = "etc/app/Synthetic-HES23-single-period.csv"
 OUTPUT_DIR = "etc/app/runs"
 
+TAWA_DB = {
+    "input": "etc/app/Synthetic-HES23-single-period.csv",
+    "output": "etc/app/TY25_BEFU24_SQ.csv.gz"
+}
 
 # Create necessary directory if not exists
 if (not os.path.exists(OUTPUT_DIR)):
@@ -46,12 +50,14 @@ def load_and_process_model(input_params, force_rerun=False, hes_path=TAWA_DB, ou
     """
     filename_hash = create_hash_filename(input_params)
     if force_rerun or (not os.path.exists(f"{output_dir}/sensitivity_tests_{filename_hash}.csv")):
-        # 1. Read Data
-        hes_data = pd.read_csv(hes_path)
+        tawa_data = {
+            "input": pd.read_csv(TAWA_DB["input"]),
+            "output": pd.read_csv(TAWA_DB["output"])
+        }
 
         # 2. Preprocess
         data = tawa_data_preprocess(
-            hes_data,
+            tawa_data,
             min_hourly_wage=input_params["min_hourly_wage"],
             hours_options=input_params["hours_options"],
             exclude_seniors=input_params["exclude_seniors"],
@@ -64,13 +70,14 @@ def load_and_process_model(input_params, force_rerun=False, hes_path=TAWA_DB, ou
         utility_func(
             data,
             input_params,
-            income_name={"market": "market_income_per_hour"},
+            income_name="income_per_hour",
             working_hours_name="working_hours",
             output_dir=output_dir,
             recreate_data=True
         )
 
         # 4. Validation & Sensitivity
+        run_ruf_calibrate(input_params, output_dir=output_dir)
         run_ruf_validation(input_params, output_dir=output_dir)
         run_ruf_sensitivity(input_params, output_dir=output_dir)
 
@@ -204,7 +211,7 @@ app.layout = dbc.Container([
                     dcc.Dropdown(
                         id='input-earner-type',
                         options=["All", "Primary", "Others"],
-                        value="All",  # Default value
+                        value="Primary",  # Default value
                         clearable=False,
                         className="mb-3"
                     ),
