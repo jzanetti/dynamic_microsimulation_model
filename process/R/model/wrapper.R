@@ -10,7 +10,7 @@ run_ruf_model <- function(df_input, cfg, recreate_data) {
     leisure_value = cfg$behaviour_model$employment$ruf$leisure_value,
     exclude_seniors = TRUE,
     hours_options = cfg$behaviour_model$employment$ruf$possible_working_hrs,
-    apply_household_income_filter = list(min = 0.1, max = 0.7),
+    apply_household_income_filter = list(min = 0.1, max = 0.9),
     apply_earner_type_filter = NULL,
     apply_household_size_filter = NULL
   )
