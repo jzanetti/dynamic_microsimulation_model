@@ -16,6 +16,8 @@ library(digest)
 library(arrow)
 library(data.table)
 library(readr)
+library(lbfgsb3c)
+library(nloptr)
 
 # ------------------------
 # Local environments
@@ -44,4 +46,4 @@ model_heckman_wage_env <- new.env()
 # ------------------------
 TEST_RUN = FALSE
 RUN_LOG = TRUE
-RUF_METHOD = "top30"
+RUF_METHOD = NULL # top30 or NULL

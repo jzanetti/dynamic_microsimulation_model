@@ -26,18 +26,34 @@ from os.path import join
 from pandas import read_csv
 
 
-def plot_intermediate(input_params: dict, data_name: str, output_dir: str = "/tmp"):
+def plot_intermediate(input_params: dict, data_name: str, tawa_data_name: str = "sq", output_dir: str = "/tmp"):
+    filename_hash = create_hash_filename(input_params, filename_suffix=tawa_data_name)
+    if data_name == "ruf_validation":
+        err_dist_results = read_csv(f"{output_dir}/validation_err_{filename_hash}.csv")
+        subplots(figsize=(10, 6))
+        bin_width = err_dist_results['bin_end'] - err_dist_results['bin_start']
 
-    if data_name == "utility_func":
+        bar(
+            err_dist_results['bin_start'], 
+            err_dist_results['count'], 
+            width=bin_width, 
+            align='edge', 
+            edgecolor='black',
+            alpha=0.7
+        )
 
-        filename_hash = create_hash_filename(input_params)
+        output_path = join(output_dir, f"ruf_validation_err_dist_{filename_hash}.png")
+        savefig(output_path, bbox_inches="tight")
+        close()
+        print(f"The plots are written with hashname: {filename_hash}")
+
+    if data_name == "ruf_sensitivity":
+
         output_path1 = join(output_dir, f"utility_employment_rate_{filename_hash}.png")
         output_path2 = join(output_dir, f"ruf_total_employment_hrs_{filename_hash}.png")
-        output_path3 = join(output_dir, f"ruf_validation_err_dist_{filename_hash}.png")
 
         sensitivity_results = read_csv(f"{output_dir}/sensitivity_tests_{filename_hash}.csv")
         accuacry_results = read_csv(f"{output_dir}/validation_score_{filename_hash}.csv")
-        err_dist_results = read_csv(f"{output_dir}/validation_err_{filename_hash}.csv")
 
         highest_utility_accuracy = accuacry_results[accuacry_results["scores"] == "highest_utility_accuracy"]["value"].values[0]
         total_hrs_accuracy = accuacry_results[accuacry_results["scores"] == "total_hrs_accuracy"]["value"].values[0]
@@ -49,6 +65,7 @@ def plot_intermediate(input_params: dict, data_name: str, output_dir: str = "/tm
             "McFadden's R2: " + \
             f"{round(r2_mcfadden, 2)}"
 
+        """
         subplots(figsize=(10, 6))
         plot(sensitivity_results["scaler"], sensitivity_results["full_time"], label=f"Full-time (Working hours >= {input_params["hours_options"][-1]}hr)")
         plot(sensitivity_results["scaler"], sensitivity_results["part_time"], label=f"Part-time (Working hours >= {input_params["hours_options"][1]}hr, < {input_params["hours_options"][-1]}hr)")
@@ -61,7 +78,7 @@ def plot_intermediate(input_params: dict, data_name: str, output_dir: str = "/tm
         ylabel("Employment rate")
         savefig(output_path1, bbox_inches="tight")
         close()
-
+        """
         subplots(figsize=(10, 6))
         plot(sensitivity_results["scaler"], sensitivity_results["total_employment_hrs"])
         axvline(x=1.0, color='r', linestyle='--')
@@ -75,22 +92,7 @@ def plot_intermediate(input_params: dict, data_name: str, output_dir: str = "/tm
         savefig(output_path2, bbox_inches="tight")
         close()
 
-        # This both plots the histogram and returns the data
-        subplots(figsize=(10, 6))
-        bin_width = err_dist_results['bin_end'] - err_dist_results['bin_start']
-
-        bar(
-            err_dist_results['bin_start'], 
-            err_dist_results['count'], 
-            width=bin_width, 
-            align='edge', 
-            edgecolor='black',
-            alpha=0.7
-        )
-        savefig(output_path3, bbox_inches="tight")
-        close()
-
-        print(f"The results are written with hashname: {filename_hash}")
+        print(f"The plots are written with hashname: {filename_hash}")
 
 
 def plot_outputs(output_results: DataFrame, output_dir: str = ""):

@@ -1,25 +1,50 @@
 
-plot_intermediate <- function(input_params, data_name, output_dir = "/tmp") {
+plot_intermediate <- function(input_params, data_name, tawa_data_name = "sq", output_dir = "/tmp") {
   
-  if (data_name == "utility_func") {
-    # Generate filename hash (assuming this function exists in your env)
-    filename_hash <- data_filename_env$create_hash_filename(input_params)
-    
-    # Define output paths
-    output_path1 <- file.path(output_dir, paste0("utility_employment_rate_", filename_hash, ".png"))
-    output_path2 <- file.path(output_dir, paste0("ruf_total_employment_hrs_", filename_hash, ".png"))
-    output_path3 <- file.path(output_dir, paste0("ruf_validation_err_dist_", filename_hash, ".png"))
+  # Assuming create_hash_filename exists in your R environment. 
+  # If input_params is a list, this functions similarly to the Python version.
+  filename_hash <- data_filename_env$create_hash_filename(input_params, filename_suffix = tawa_data_name)
+  
+  # --- Scenario 1: RUF Validation (Histogram/Bar) ---
+  if (data_name == "ruf_validation") {
     
     # Read Data
-    sens_path <- file.path(output_dir, paste0("sensitivity_tests_", filename_hash, ".csv"))
-    acc_path <- file.path(output_dir, paste0("validation_score_", filename_hash, ".csv"))
-    err_dist_path <- file.path(output_dir, paste0("validation_err_", filename_hash, ".csv"))
+    file_path <- file.path(output_dir, paste0("validation_err_", filename_hash, ".csv"))
+    err_dist_results <- read_csv(file_path, show_col_types = FALSE)
     
-    sensitivity_results <- read_csv(sens_path, show_col_types = FALSE)
-    accuracy_results <- read_csv(acc_path, show_col_types = FALSE)
-    err_dist_results <- read_csv(err_dist_path, show_col_types = FALSE)
+    # Calculate bin width logic (needed for geom_rect to mimic align='edge')
+    # In Python align='edge' means the bar starts at x and goes right.
     
-    # Extract Accuracy Scores
+    p <- ggplot(err_dist_results) +
+      geom_rect(aes(
+        xmin = bin_start,
+        xmax = bin_end,
+        ymin = 0,
+        ymax = count
+      ), 
+      fill = "steelblue", 
+      color = "black", 
+      alpha = 0.7) +
+      labs(title = "Validation Error Distribution") + # Added title for clarity
+      theme_minimal()
+    
+    output_path <- file.path(output_dir, paste0("ruf_validation_err_dist_", filename_hash, ".png"))
+    ggsave(output_path, plot = p, width = 10, height = 6, dpi = 300)
+    
+    print(paste0("The plots are written with hashname: ", filename_hash))
+  }
+  
+  # --- Scenario 2: RUF Sensitivity (Line Charts) ---
+  if (data_name == "ruf_sensitivity") {
+    
+    output_path1 <- file.path(output_dir, paste0("utility_employment_rate_", filename_hash, ".png"))
+    output_path2 <- file.path(output_dir, paste0("ruf_total_employment_hrs_", filename_hash, ".png"))
+    
+    # Read Data
+    sensitivity_results <- read_csv(file.path(output_dir, paste0("sensitivity_tests_", filename_hash, ".csv")), show_col_types = FALSE)
+    accuracy_results <- read_csv(file.path(output_dir, paste0("validation_score_", filename_hash, ".csv")), show_col_types = FALSE)
+    
+    # Extract values using dplyr
     highest_utility_accuracy <- accuracy_results %>% 
       filter(scores == "highest_utility_accuracy") %>% 
       pull(value)
@@ -28,76 +53,37 @@ plot_intermediate <- function(input_params, data_name, output_dir = "/tmp") {
       filter(scores == "total_hrs_accuracy") %>% 
       pull(value)
     
-    r2_mcfadden <- accuracy_results %>%
-      filter(scores == "r2_mcfadden") %>%
+    r2_mcfadden <- accuracy_results %>% 
+      filter(scores == "r2_mcfadden") %>% 
       pull(value)
     
-    # Format Title String
-    accuracy_score_str <- sprintf("Total Utility Accuracy: %.2f %%, Total Hours Accuracy: %.2f %%, McFadden's R2: %.2f %%", 
-                                  highest_utility_accuracy, total_hrs_accuracy, r2_mcfadden)
+    # Construct String
+    accuracy_score_str <- paste0(
+      "Total Utility Accuracy: ", round(highest_utility_accuracy, 2), " %, ",
+      "Total Hours Accuracy: ", round(total_hrs_accuracy, 2), " %; ",
+      "McFadden's R2: ", round(r2_mcfadden, 2)
+    )
     
-    # --- Plot 1: Employment Rates (Full-time vs Part-time) ---
-    
-    # Prepare dynamic labels from input_params
-    hours_opts <- input_params[["hours_options"]]
-    last_hr <- hours_opts[length(hours_opts)] # Equivalent to [-1]
-    second_hr <- hours_opts[2]                # Equivalent to [1]
-    
-    label_ft <- sprintf("Full-time (Working hours >= %shr)", last_hr)
-    label_pt <- sprintf("Part-time (Working hours >= %shr, < %shr)", second_hr, last_hr)
-    
-    # Reshape data (Pivot Long) to make it compatible with ggplot legend mapping
-    plot_data_1 <- sensitivity_results %>%
-      select(scaler, full_time, part_time) %>%
-      pivot_longer(cols = c(full_time, part_time), names_to = "type", values_to = "rate") %>%
-      mutate(type_label = ifelse(type == "full_time", label_ft, label_pt))
-    
-    p1 <- ggplot(plot_data_1, aes(x = scaler, y = rate, color = type_label)) +
-      geom_line(linewidth = 1) +
-      geom_vline(xintercept = 1.0, color = 'red', linetype = "dashed") +
-      geom_hline(yintercept = 1.0, color = 'blue', linetype = "dashed") +
-      scale_y_continuous(labels = scales::label_percent()) + # Formats 1.0 as 100%
-      labs(
-        title = paste("Employment behaviours with Random Utility Function", accuracy_score_str, sep = "\n"),
-        x = "Income Scaler",
-        y = "Employment rate",
-        color = NULL # Removes legend title
-      ) +
-      theme_minimal() +
-      theme(legend.position = "bottom")
-    
-    # Save Plot 1
-    ggsave(output_path1, plot = p1, width = 10, height = 6, bg = "white")
-    
-    # --- Plot 2: Total Employment Hours ---
+    # --- Active Plot: Total Employment Hours ---
     p2 <- ggplot(sensitivity_results, aes(x = scaler, y = total_employment_hrs)) +
-      geom_line(linewidth = 1) +
+      geom_line() +
       geom_vline(xintercept = 1.0, color = 'red', linetype = "dashed") +
       geom_hline(yintercept = 1.0, color = 'blue', linetype = "dashed") +
-      scale_y_continuous(labels = scales::label_percent()) +
+      # Matplotlib used PercentFormatter(xmax=1.0), implying 1.0 = 100%
+      scale_y_continuous(labels = scales::percent) + 
       labs(
-        title = paste("Employment behaviours with Random Utility Function", accuracy_score_str, sep = "\n"),
+        title = paste0("Employment behaviours with Random Utility Function \n ", accuracy_score_str),
         x = "Income Scaler",
         y = "Employment hours"
       ) +
       theme_minimal()
     
-    # Save Plot 2
-    ggsave(output_path2, plot = p2, width = 10, height = 6, bg = "white")
-    print(paste0("The employment hours figure are written into", output_path2))
+    ggsave(output_path2, plot = p2, width = 10, height = 6, dpi = 300)
     
-    # Plot 3: Error Distribution Histogram
-    p3 <- ggplot(err_dist_results) +
-      geom_rect(aes(xmin = bin_start, xmax = bin_end, ymin = 0, ymax = count),
-                fill = "steelblue", color = "black", alpha = 0.7) +
-      theme_minimal() +
-      labs(x = "Error", y = "Count", title = "Validation Error Distribution")
-    
-    ggsave(output_path3, plot = p3, width = 10, height = 6, bg = "white")
-    print(paste0("The error distributions figure are written into", output_path3))
-    
+    print(paste0("The plots are written with hashname: ", filename_hash))
   }
 }
+
 
 # --- 2. Plot Outputs ---
 plot_outputs <- function(output_results, output_dir = "") {

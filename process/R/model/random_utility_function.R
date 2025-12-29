@@ -1,197 +1,24 @@
 
 
 
-cal_utility <- function(data, params, income_scaler = 1.0) {
-  # 1. Ensure data is a data.table for in-place modification
-  if (!is.data.table(data)) {
-    data <- as.data.table(data)
-  }
-  
-  # 2. Extract parameters into a local list or vector for readability
-  params <- c(params[["beta_income_hhld"]],
-              params[["beta_income_hhld2"]],
-              params[["beta_leisure"]],
-              params[["beta_leisure2"]],
-              params[["beta_interaction"]])
-  
-  # 3. Calculate Utility
-  data[, utility := quadratic_utility(
-    params,
-    income * income_scaler,
-    income_hhld * income_scaler,
-    leisure
-  )]
-  
-  # 4. Handle Calibration
-  if ("calibrated_err" %in% names(data)) {
-    data[, utility_calibrated := utility + calibrated_err]
-  }
-  
-  return(data)
-}
-
-run_ruf_calibrate <- function(input_params, output_dir) {
-  
-  # 1. Helper function for drawing Truncated Gumbel errors
-  # This replicates the _obtain_err logic but is vectorized for speed
-  obtain_err <- function(utility, is_chosen) {
-    # Identify the observed choice
-    k_idx <- which(is_chosen == 1)
-    V_k <- utility[k_idx]
-    
-    # Draw error for chosen alternative (Standard Gumbel)
-    # Gumbel(0,1) quantile function: -log(-log(u))
-    u_k <- runif(1, 0, 1)
-    eps_k <- -log(-log(u_k))
-    
-    # Initialize error vector
-    epsilons <- numeric(length(utility))
-    epsilons[k_idx] <- eps_k
-    
-    # Indices for unchosen alternatives
-    j_indices <- which(is_chosen == 0)
-    
-    for (j in j_indices) {
-      V_j <- utility[j]
-      u_j <- runif(1, 0, 1)
-      
-      # Upper bound for the unchosen error to ensure V_k + eps_k > V_j + eps_j
-      threshold <- eps_k + V_k - V_j
-      
-      # Truncated Gumbel draw
-      # Replicating Python: -log(exp(-threshold) - log(u_j))
-      epsilons[j] <- -log(exp(-threshold) - log(u_j))
-    }
-    
-    return(epsilons)
-  }
-  
-  print("Calibrating the RUF function ...")
-  # 2. Setup Filenames (using md5 for consistency)
-  filename_hash <- data_filename_env$create_hash_filename(input_params)
-  data_path <- file.path(output_dir, paste0("utility_func_data_", filename_hash, ".parquet"))
-  param_path <- file.path(output_dir, paste0("utility_func_parameters_", filename_hash, ".csv"))
-  
-  # 3. Load Data
-  data <- as.data.table(read_parquet(data_path))
-  params_df <- fread(param_path)
-  
-  # Convert params DF to a named list
-  params <- setNames(as.list(params_df$Value), params_df$parameter)
-
-  # 4. Initial Utility Calculation
-  data <- cal_utility(data, params)
-  
-  # 5. Apply Calibration (Group by person)
-  data[, calibrated_err := obtain_err(utility, is_chosen), by = people_id]
-  
-  # 6. Final cleanup and export
-  data[, utility := NULL]
-  
-  write_parquet(data, data_path)
-  print(sprintf("Calibration complete. Results saved with hash: %s", filename_hash))
-}
-
-predict_ruf <- function(data, 
-                        params, 
-                        method = "top30", 
-                        scaler = 1.0) {
-  
-  # 1. Ensure data is a data.table
-  if (!is.data.table(data)) {
-    data <- as.data.table(data)
-  }
-  
-  # 2. Calculate utility
-  data <- cal_utility(data, params, income_scaler = scaler)
-  
-  # 3. Determine which utility column to use
-  utility_col <- "utility"
-  if ("utility_calibrated" %in% names(data)) {
-    utility_col <- "utility_calibrated"
-  }
-  
-  # 4. Apply prediction logic
-  if (method == "top30") {
-    data[, threshold := quantile(get(utility_col), probs = 0.7), by = people_id]
-    predictions <- data[get(utility_col) >= threshold]
-    data[, threshold := NULL]
-  } else {
-    predictions <- data[, .SD[which.max(get(utility_col))], by = id]
-  }
-  
-  return(predictions)
-}
-
-
-negative_log_likelihood <- function(params, df, options_n) {
-  # 1. Calculate Utility for all rows
-  V <- quadratic_utility(
-    params, 
-    df[["income"]], 
-    df[["income_hhld"]], 
-    df[["leisure"]]
-  )
-
-  # 2. Reshape to (Num_People, Options_N)
-  # R matrices are filled by column by default, Python by row.
-  # Assuming data is sorted by person, we fill by row to match Python behavior.
-  n_people <- nrow(df) %/% options_n
-  V_matrix <- matrix(V, nrow = n_people, ncol = options_n, byrow = TRUE)
-  
-  # 3. Calculate Probabilities (Softmax)
-  # Subtract max for stability
-  # apply(..., 1, max) gets max per row
-  max_V <- apply(V_matrix, 1, max)
-  
-  # Broadcast subtraction (R does this column-wise by default, so we need care)
-  # V_matrix - max_V works if max_V is a vector matching rows
-  exp_V <- exp(V_matrix - max_V)
-  
-  # Sum exponentials per row
-  sum_exp_V <- rowSums(exp_V)
-  
-  # Calculate probabilities
-  probs <- exp_V / sum_exp_V
-  
-  # 4. Get probability of the ACTUAL choice
-  # We use the 'is_chosen' mask
-  choice_mask <- matrix(df[["is_chosen"]], nrow = n_people, ncol = options_n, byrow = TRUE)
-  
-  # Select probabilities where choice_mask == 1
-  # In R, subsetting a matrix with a logical matrix returns a vector
-  chosen_probs <- probs[choice_mask == 1]
-  
-  # 5. Sum Log Likelihoods
-  return(-sum(log(chosen_probs + 1e-10)))
-}
-
-quadratic_utility <- function(
-    params, 
-    income, 
-    income_hhld, 
-    leisure,          
-    show_debug = FALSE, 
-    apply_log = RUN_LOG) {
-  
-  b_hhld_i  <- params[1]
+quadratic_utility <- function(params, income, income_hhld, leisure, show_debug = FALSE, apply_log = RUN_LOG) {
+  # params: Vector expected c(b_hhld_i, b_hhld_i2, b_l, b_l2, b_cl)
+  b_hhld_i <- params[1]
   b_hhld_i2 <- params[2]
-  b_l       <- params[3]
-  b_l2      <- params[4]
-  b_cl      <- params[5]
+  b_l <- params[3]
+  b_l2 <- params[4]
+  b_cl <- params[5]
   
-  # Apply Log transformation if requested
   if (apply_log) {
     income_hhld_to_use <- log(income_hhld)
-    income_to_use      <- log(income)
-    leisure_to_use     <- log(leisure)
+    income_to_use <- log(income)
+    leisure_to_use <- log(leisure)
   } else {
     income_hhld_to_use <- income_hhld
-    income_to_use      <- income
-    leisure_to_use     <- leisure
+    income_to_use <- income
+    leisure_to_use <- leisure
   }
   
-  # Calculate Utility
   util <- (
     b_hhld_i * income_hhld_to_use +
       b_hhld_i2 * (income_hhld_to_use^2) +
@@ -201,90 +28,315 @@ quadratic_utility <- function(
   )
   
   if (show_debug) {
-    print("Total util %f", sum(util, na.rm = TRUE))
+    debug_info <- paste("Total util", sum(util))
+    print(debug_info)
   }
   
   return(util)
 }
 
 
+cal_utility <- function(data, params, income_scaler = 1.0) {
+  setDT(data)
+  
+  # Ensure params are in the correct vector order for quadratic_utility
+  # Python dict keys: beta_income_hhld, beta_income_hhld2, beta_leisure, beta_leisure2, beta_interaction
+  param_vec <- c(
+    params[["beta_income_hhld"]],
+    params[["beta_income_hhld2"]],
+    params[["beta_leisure"]],
+    params[["beta_leisure2"]],
+    params[["beta_interaction"]]
+  )
+  
+  data[, utility := quadratic_utility(
+    param_vec,
+    income * income_scaler,
+    income_hhld * income_scaler,
+    leisure,
+    show_debug = FALSE
+  )]
+  
+  if ("calibrated_err" %in% names(data)) {
+    data[, utility_calibrated := utility + calibrated_err]
+  }
+  
+  return(data)
+}
+
+run_ruf_calibrate <- function(input_params, tawa_data_name, output_dir) {
+  
+  # Inner function to generate Gumbel errors (Chosen vs Unchosen)
+  # Operates on a specific group (one person's options)
+  obtain_err <- function(group_dt) {
+    # Identify the observed choice (where is_chosen == 1)
+    # In R, we find the index within the group vector
+    k_idx <- which(group_dt$is_chosen == 1)[1]
+    
+    # Python: V_k = group.loc[k_idx, 'utility']
+    V_k <- group_dt$utility[k_idx]
+    
+    # Draw error for the chosen alternative (Standard Gumbel)
+    u_k <- runif(1, 0, 1)
+    # Python: eps_k = -np_log(-np_log(u_k))
+    eps_k <- -log(-log(u_k))
+    
+    # Initialize epsilons vector for this group
+    epsilons <- numeric(nrow(group_dt))
+    epsilons[k_idx] <- eps_k
+    
+    # Draw errors for unchosen alternatives (Truncated Gumbel)
+    # Ensures V_k + eps_k > V_j + eps_j
+    for (j_idx in seq_len(nrow(group_dt))) {
+      if (j_idx == k_idx) {
+        next
+      }
+      V_j <- group_dt$utility[j_idx]
+      u_j <- runif(1, 0, 1)
+      
+      # Upper bound for the unchosen error
+      threshold <- eps_k + V_k - V_j
+      
+      # Python: eps_j = -np_log(np_exp(-threshold) - np_log(u_j))
+      term <- exp(-threshold) - log(u_j)
+      eps_j <- -log(term)
+      
+      epsilons[j_idx] <- eps_j
+    }
+    
+    return(epsilons)
+  }
+  
+  print("Calibrating the RUF function ...")
+  
+  # Generate filenames
+  filename_hash <- data_filename_env$create_hash_filename(input_params, filename_suffix = tawa_data_name)
+  ruf_data_path <- file.path(output_dir, paste0("utility_func_data_", filename_hash, ".parquet"))
+  ruf_params_path <- file.path(output_dir, paste0("utility_func_parameters_", filename_hash, ".csv"))
+  
+  # Read Data and Params
+  data <- read_parquet(ruf_data_path)
+  setDT(data)
+  
+  params_df <- fread(ruf_params_path)
+  # Convert params DataFrame to a named list/vector
+  params <- as.list(setNames(params_df$Value, params_df$parameter))
+  
+  # Calculate Utility
+  data <- cal_utility(data, params)
+  
+  # Calculate calibrated errors by group
+  # Python: data.groupby("people_id").apply(_obtain_err)
+  data[, calibrated_err := obtain_err(.SD), by = people_id]
+  
+  # Drop utility column
+  data[, utility := NULL]
+  
+  # Write output
+  write_parquet(data, ruf_data_path)
+}
+
+predict <- function(data, params, method = RUF_METHOD, scaler = 1.0, use_hhld = FALSE) {
+  
+  setDT(data)
+  data <- cal_utility(data, params, income_scaler = scaler)
+  
+  utility_name <- "utility"
+  if ("utility_calibrated" %in% names(data)) {
+    utility_name <- "utility_calibrated"
+  }
+  
+  if (! is.null(method)) {
+    # Threshold is top 30% (quantile 0.7)
+    data[, utility_threshold := quantile(get(utility_name), probs = 0.7), by = people_id]
+    predictions <- data[get(utility_name) >= utility_threshold]
+    # Calculate mean hours for valid options
+    predictions[, hours := mean(option_hours), by = .(household_id, people_id)]
+    # Clean up temporary column
+    predictions[, utility_threshold := NULL]
+    
+  } else {
+    if (use_hhld) {
+      hhld_total_utility <- data[, .(total_util = sum(get(utility_name))), by = .(household_id, option_hours_id)]
+      hhld_best_option <- hhld_total_utility[hhld_total_utility[, .I[which.max(total_util)], by = household_id]$V1]
+      
+      predictions <- merge(
+        data,
+        hhld_best_option[, .(household_id, option_hours_id)],
+        by = c("household_id", "option_hours_id"),
+        all = FALSE # Inner join
+      )
+      
+    } else {
+      predictions <- data[data[, .I[which.max(get(utility_name))], by = people_id]$V1]
+    }
+    
+    setnames(predictions, "option_hours", "hours")
+  }
+  
+  return(predictions)
+}
+
+
+negative_log_likelihood <- function(params, df, options_n) {
+
+  income <- df$income
+  inc_hh <- df$income_hhld 
+  leisure <- df$leisure
+  is_chosen <- df$is_chosen
+  
+  V <- quadratic_utility(
+    params, 
+    income, 
+    inc_hh, 
+    leisure
+  )
+  
+  # 2. Reshape to (Num_People, Options_n)
+  n_people <- nrow(df) %/% options_n
+  V_matrix <- matrix(V, nrow = n_people, ncol = options_n, byrow = TRUE)
+  
+  # 3. Calculate Probabilities (Softmax)
+  max_V <- apply(V_matrix, 1, max)
+  exp_V <- exp(V_matrix - max_V)
+  sum_exp_V <- rowSums(exp_V)
+  
+  # Element-wise division with recycling: Each column divided by sum_exp_V
+  probs <- exp_V / sum_exp_V
+  
+  # 4. Get probability of the ACTUAL choice
+  choice_mask <- matrix(is_chosen, nrow = n_people, ncol = options_n, byrow = TRUE)
+  
+  # Extract probabilities where choice_mask == 1
+  chosen_probs <- probs[choice_mask == 1]
+  
+  return(-sum(log(chosen_probs + 1e-10)))
+}
+
 utility_func <- function(
-    df_input,
     params,
+    tawa_data_name = "sq",
     output_dir = "",
-    income_name = "income_per_hour",
-    working_hours_name = "working_hours",
+    hours_options = c(0, 20, 40),
     params_dict = list(
-      "beta_income_hhld"  = list("initial" = 0.1,  "bound" = c(1e-6, 15.0)),
-      "beta_income_hhld2" = list("initial" = -0.01, "bound" = c(-15.0, -1e-6)),
-      "beta_leisure"      = list("initial" = 0.1,  "bound" = c(1e-6, 15.0)),
-      "beta_leisure2"     = list("initial" = -0.01, "bound" = c(-15.0, -1e-6)),
-      "beta_interaction"  = list("initial" = 0.1,  "bound" = c(-15.0, 15.0))
+      "beta_income_hhld" = list("initial" = 0.1, "bound" = c(1e-6, Inf)),
+      "beta_income_hhld2" = list("initial" = -0.01, "bound" = c(-Inf, -1e-6)),
+      "beta_leisure" = list("initial" = 0.1, "bound" = c(1e-6, Inf)),
+      "beta_leisure2" = list("initial" = -0.01, "bound" = c(-Inf, -1e-6)),
+      "beta_interaction" = list("initial" = 0.1, "bound" = c(-Inf, Inf))
     ),
-    recreate_data = TRUE
+    optima_method = "nloptr", # optim, nloptr, lbfgsb3c
+    maxit = 500
 ) {
   
-  hours_options <- params[["hours_options"]]
-  total_hours <- params[["total_hours"]]
-  leisure_value <- params[["leisure_value"]]
-  
-  filename_hash <- data_filename_env$create_hash_filename(params)
-  
-  data_output_path <- sprintf("%s/utility_func_data_%s.parquet", output_dir, filename_hash)
-  model_output_path <- sprintf("%s/utility_func_parameters_%s.csv", output_dir, filename_hash)
-  
-  if (recreate_data | !file.exists(data_output_path)) {
-    data_input_env$prepare_ruf_inputs(
-      df_input,
-      hours_options,
-      total_hours,
-      leisure_value,
-      income_name,
-      working_hours_name,
-      data_output_path=data_output_path
-    )
-  }
+  # ----------------------------
+  # Reading input data
+  # ----------------------------
+  filename_hash <- data_filename_env$create_hash_filename(params, filename_suffix = tawa_data_name)
+  data_output_path <- file.path(output_dir, paste0("utility_func_data_", filename_hash, ".parquet"))
+  model_output_path <- file.path(output_dir, paste0("utility_func_parameters_", filename_hash, ".csv"))
   proc_data <- read_parquet(data_output_path)
-
-  # Extract initials and bounds
-  initial_guess <- sapply(params_dict, function(x) x[["initial"]])
   
-  # Optim L-BFGS-B takes lower and upper vectors
-  lower_bounds <- sapply(params_dict, function(x) if(is.null(x[["bound"]][1])) -Inf else x[["bound"]][1])
-  upper_bounds <- sapply(params_dict, function(x) if(is.null(x[["bound"]][2])) Inf else x[["bound"]][2])
+  # ----------------------------
+  # Extract initial guesses and bounds from the list structure
+  # ----------------------------
+  initial_guess <- sapply(params_dict, function(x) x$initial)
   
-  # Optimize
-  result <- optim(
-    par = initial_guess,
-    fn = negative_log_likelihood,
-    df = proc_data,
-    options_n = length(hours_options),
-    method = "L-BFGS-B",
-    lower = lower_bounds,
-    upper = upper_bounds,
-    control = list(
-      trace = 1, 
-      REPORT = 1
-    ) 
-  )
+  # ----------------------------
+  # Obtain lower and upper bounds
+  # ----------------------------
+  lower_bounds <- sapply(params_dict, function(x) {
+    val <- x$bound[1]
+    if (is.null(val) || is.na(val) || val == -Inf) return(-Inf) # Explicit check
+    return(val)
+  })
+  upper_bounds <- sapply(params_dict, function(x) {
+    val <- x$bound[2]
+    if (is.null(val) || is.na(val) || val == Inf) return(Inf)
+    return(val)
+  })
   
-  result_params <- list()
-  param_names <- names(params_dict)
+  # ----------------------------
+  # Optimization
+  # ----------------------------
+  print(paste0("Start running optimization ..., using ", optima_method))
   
-  for (i in seq_along(param_names)) {
-    result_params[[param_names[i]]] <- result$par[i]
+  proc_data <- proc_data %>%
+    arrange(household_id, people_id, option_hours)
+  
+  if (optima_method == "optim") {
+    result <- optim(
+      par = initial_guess,
+      fn = negative_log_likelihood,
+      df = proc_data[, c("income", "income_hhld", "leisure", "is_chosen")],
+      options_n = length(hours_options),
+      method = "L-BFGS-B",
+      lower = lower_bounds,
+      upper = upper_bounds,
+      control = list(
+        trace = 1,
+        REPORT = 1,
+        factr = 1e7,
+        ndeps = rep(1e-8, length(initial_guess)),
+        maxit = maxit
+      )
+    )
+    
+    result_params <- result$par
+    
+  } else if (optima_method %in% c("nloptr", "lbfgsb3c")) {
+    obj_func_wrapper <- function(x) {
+      negative_log_likelihood(
+        x,
+        df = proc_data[, c("income", "income_hhld", "leisure", "is_chosen")],
+        options_n = length(hours_options)
+      )
+    }
+    
+    if (optima_method == "nloptr") {
+      result <- nloptr(
+        x0 = initial_guess,          # equivalent to 'par'
+        eval_f = obj_func_wrapper,   # your objective function
+        lb = lower_bounds,           # lower bounds
+        ub = upper_bounds,           # upper bounds
+        opts = list(
+          "algorithm" = "NLOPT_LN_BOBYQA", # Derivative-free, supports bounds.
+          "xtol_rel" = 1.0e-8,             # Convergence tolerance (similar to factr)
+          "maxeval" = maxit,                # Max iterations
+          "print_level" = 2                # Trace output (0=none, 3=verbose)
+        )
+      )
+      result_params <- result$solution
+    }
+    
+    if (optima_method == "lbfgsb3c") {
+      result <- lbfgsb3c(
+        par = initial_guess,
+        fn = obj_func_wrapper,
+        lower = lower_bounds,
+        upper = upper_bounds,
+        control = list(
+          trace = 1,
+          factr = 1e7,
+          maxit = maxit
+        )
+      )
+      result_params <- result$par
+    }
+    
   }
   
-  # Write outputs
-  results_params_df <- data.frame(
-    parameter = names(result_params),
-    Value = unlist(result_params),
-    row.names = NULL
+  # ----------------------------
+  # Collect Results
+  # ----------------------------
+  param_names <- names(params_dict)
+  results_params_df <- data.table(
+    parameter = param_names,
+    Value = result_params
   )
   
-  print(sprintf("The model estimated paramaters are written to %s", model_output_path))
-  write_csv(results_params_df, model_output_path)
-  
-  print(sprintf("The model training data are written to %s", data_output_path))
-  write_parquet(proc_data, data_output_path)
+  print(paste("The model estimated paramaters are written to", model_output_path))
+  fwrite(results_params_df, model_output_path)
 }
+
+

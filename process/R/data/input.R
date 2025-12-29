@@ -30,7 +30,162 @@ create_inputs <- function(data_dir, required_data_types = c("pop"), data_type = 
   return (inputs)
 }
 
+
 prepare_ruf_inputs <- function(df_input, 
+                               hours_options, 
+                               total_hours, 
+                               leisure_value, 
+                               income_name, 
+                               working_hours_name, 
+                               data_scaler = 1000.0, 
+                               data_output_path = NULL) {
+  
+  # Select relevant features
+  # Note: R makes copies by default on modification, so deepcopy is implicit
+  df_processed <- df_input %>%
+    select(id, 
+           household_id, 
+           selected, 
+           all_of(income_name), 
+           all_of(working_hours_name))
+  
+  all_household_ids <- unique(df_processed$household_id)
+  long_data <- list()
+  
+  total_hhs <- length(all_household_ids)
+  
+  # Loop through households
+  for (index1 in seq_along(all_household_ids)) {
+    proc_hhld_id <- all_household_ids[index1]
+    
+    # Logging logic (Python index is 0-based, R is 1-based)
+    # Python: index % 10 == 0. 
+    # To match strictly: check if (index1 - 1) is divisible by 10
+    if ((index1 - 1) %% 10 == 0) {
+      pct <- round(100 * (index1 - 1) / total_hhs, 3)
+      print(paste0("Processing input: ", pct, "%"))
+    }
+    
+    proc_hhld <- df_processed %>% filter(household_id == proc_hhld_id)
+    
+    num_people <- nrow(proc_hhld)
+    
+    # Generate all possible hours combinations
+    # Python's itertools.product(A, repeat=N) varies the last element fastest.
+    # R's expand.grid varies the first element fastest.
+    # To match Python order: expand.grid on reversed list, then reverse columns.
+    args <- rep(list(hours_options), num_people)
+    comb_grid <- expand.grid(rev(args))
+    comb_grid <- comb_grid[, ncol(comb_grid):1, drop = FALSE]
+    colnames(comb_grid) <- paste0("p", seq_len(num_people))
+    
+    # Calculate Sum of Squared Errors to find chosen combination
+    # Python: sum((a - b) ** 2 for a, b in zip(c, actual))
+    actual_hours <- proc_hhld[[working_hours_name]]
+    
+    # Vectorized calculation of SSE for every row
+    # Sweep subtracts actual_hours from every row
+    diffs <- sweep(as.matrix(comb_grid), 2, actual_hours, "-")
+    sse <- rowSums(diffs^2)
+    
+    # Find index of minimum SSE (matches min key logic)
+    # which.min returns the first minimum, matching Python's min() stability
+    chosen_index <- which.min(sse)
+    
+    # Process each combination
+    # Using lapply here allows us to process the logic per-combination row
+    # effectively converting the Python inner loop.
+    
+    # Pre-fetching vectors to avoid repeated lookups inside the loop
+    ids <- proc_hhld$id
+    wages <- proc_hhld[[income_name]]
+    selections <- proc_hhld$selected
+    hh_id_val <- proc_hhld$household_id[1]
+    
+    hh_combinations_list <- lapply(seq_len(nrow(comb_grid)), function(i_comb) {
+      
+      proc_combination <- as.numeric(comb_grid[i_comb, ])
+      
+      # is_chosen logic
+      is_chosen <- if (i_comb == chosen_index) 1 else 0
+      
+      proc_data_list_inner <- list()
+      proc_hhld_income <- 0
+      
+      # Iterate through people (columns of the combination)
+      # Corresponds to: for index2, proc_hours in enumerate(proc_combination):
+      for (index2 in seq_len(num_people)) {
+        
+        proc_hours <- proc_combination[index2]
+        person_wage <- wages[index2]
+        
+        leisure_hours <- total_hours - proc_hours
+        
+        if (proc_hours > 0) {
+          market_income_person <- person_wage * proc_hours
+        } else {
+          market_income_person <- 1e-9
+        }
+        
+        gross_income_person <- market_income_person
+        
+        proc_hhld_income <- proc_hhld_income + gross_income_person
+        
+        if (selections[index2]) {
+          # Append to list
+          proc_data_list_inner[[length(proc_data_list_inner) + 1]] <- list(
+            option_hours_id = i_comb - 1, # Adjust to 0-based index to match Python
+            household_id = as.integer(hh_id_val),
+            people_id = as.integer(ids[index2]),
+            option_hours = proc_hours,
+            is_chosen = is_chosen,
+            income = gross_income_person,
+            leisure = leisure_hours * leisure_value
+            # income_hhld is added after the loop in Python
+          )
+        }
+      }
+      
+      # Python logic: for proc_data in proc_data_list: assign hhld_income
+      if (proc_hhld_income == 0) {
+        proc_hhld_income <- 1e-9
+      }
+      
+      # Update the inner list items with household income
+      for (k in seq_along(proc_data_list_inner)) {
+        proc_data_list_inner[[k]]$income_hhld <- proc_hhld_income
+      }
+      
+      return(proc_data_list_inner)
+    })
+    
+    # Flatten the list of lists for this household and add to main list
+    long_data <- c(long_data, unlist(hh_combinations_list, recursive = FALSE))
+  }
+  
+  # Convert list of lists to DataFrame
+  # bind_rows is efficient for this
+  results <- bind_rows(long_data)
+  
+  # Scaling
+  results$income <- results$income / data_scaler
+  results$income_hhld <- results$income_hhld / data_scaler
+  results$leisure <- results$leisure / data_scaler
+  
+  # Sorting
+  results$option_hours_id <- as.integer(results$option_hours_id)
+  results <- results %>%
+    arrange(household_id, people_id, option_hours)
+  
+  # Write to parquet if path is provided
+  if (!is.null(data_output_path)) {
+    write_parquet(results, data_output_path)
+  }
+  return(results)
+}
+
+
+prepare_ruf_inputs3 <- function(df_input, 
                                hours_options, 
                                total_hours, 
                                leisure_value, 
@@ -41,7 +196,7 @@ prepare_ruf_inputs <- function(df_input,
   
 
   # 1. Convert to data.table and select relevant columns
-  dt <- as.data.table(df_input)[, .(
+  df_processed <- as.data.table(df_input)[, .(
     id, 
     household_id, 
     selected, 
@@ -49,7 +204,7 @@ prepare_ruf_inputs <- function(df_input,
     working_hours = get(working_hours_name)
   )]
   
-  all_household_ids <- unique(dt$household_id)
+  all_household_ids <- unique(df_processed$household_id)
   long_data_list <- list()
   
   # 2. Iterate through households
@@ -58,10 +213,10 @@ prepare_ruf_inputs <- function(df_input,
     
     # Progress logging
     if (i %% 10 == 0) {
-      message(sprintf("Processing input: %.3f%%", 100 * i / length(all_household_ids)))
+      print(sprintf("Processing input: %.3f%%", 100 * i / length(all_household_ids)))
     }
     
-    proc_hhld <- dt[household_id == proc_hhld_id]
+    proc_hhld <- df_processed[household_id == proc_hhld_id]
     num_people <- nrow(proc_hhld)
     
     # 3. Generate all possible hours combinations
@@ -99,6 +254,7 @@ prepare_ruf_inputs <- function(df_input,
       
       if (length(selected_idx) > 0) {
         row_data <- data.table(
+          option_hours_id = j,
           household_id = proc_hhld_id,
           people_id = proc_hhld$id[selected_idx],
           option_hours = proc_combination[selected_idx],
@@ -120,7 +276,7 @@ prepare_ruf_inputs <- function(df_input,
   results[, (cols_to_scale) := lapply(.SD, function(x) x / data_scaler), .SDcols = cols_to_scale]
   
   # Sorting
-  setorder(results, household_id, people_id, option_hours)
+  setorder(results, option_hours_id, household_id, people_id, option_hours)
   
   # 7. Write to Parquet
   if (!is.null(data_output_path)) {

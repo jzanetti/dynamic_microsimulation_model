@@ -3,7 +3,7 @@ from json import dumps as json_dumps
 import hashlib
 from process.Python import TEST_RUN
 
-def create_hash_filename(params, test_flag: bool = TEST_RUN):
+def create_hash_filename(params, test_flag: bool = TEST_RUN, filename_suffix: str = None):
 
     if test_flag:
         return "test"
@@ -13,5 +13,8 @@ def create_hash_filename(params, test_flag: bool = TEST_RUN):
     
     # 2. Generate MD5 hash (unique signature of this dict)
     signature = hashlib.md5(json_str).hexdigest()
-    
+
+    if filename_suffix is not None:
+        signature = f"{signature}_{filename_suffix}"
+
     return signature

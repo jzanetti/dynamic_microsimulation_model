@@ -18,3 +18,6 @@ etc/app/*.csv
 etc/app/*.parquet
 etc/app/runs
 etc/app/TY25_BEFU24_SQ.csv.gz
+etc/app/TY25_BEFU24_Reform1.csv.gz
+etc/app/TY25_BEFU24_sijin.csv.gz
+etc/app/TY25_BEFU24_test2.csv.gz

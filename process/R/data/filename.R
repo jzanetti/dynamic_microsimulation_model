@@ -1,6 +1,6 @@
 
 
-create_hash_filename <- function(params, test_flag = TEST_RUN) {
+create_hash_filename <- function(params, test_flag = TEST_RUN, filename_suffix = NULL) {
   
   if (test_flag) {
     return ("test")
@@ -14,12 +14,14 @@ create_hash_filename <- function(params, test_flag = TEST_RUN) {
   }
   
   # auto_unbox=TRUE ensures scalars are not wrapped in brackets (e.g., 1 vs [1])
-  # digits=NA ensures maximum precision for numbers
   json_str <- toJSON(params, auto_unbox = TRUE, digits = NA)
   
   # 2. Generate MD5 hash
-  # serialize=FALSE ensures we hash the string content itself, not the R object wrapper
   signature <- digest(json_str, algo = "md5", serialize = FALSE)
+  
+  if (! is.null(filename_suffix)) {
+    signature <- paste0(signature, "_", filename_suffix)
+  }
   
   return(signature)
 }

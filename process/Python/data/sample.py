@@ -453,7 +453,7 @@ def obtain_working_hours(df: DataFrame):
 
     pop_merged.loc[pop_merged["working_hours"] == 0, "working_hours"] = EPLISON
 
-    return pop_merged
+    return pop_merged.drop(columns = ["hours_mean"])
 
 
 

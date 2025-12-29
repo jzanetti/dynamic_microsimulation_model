@@ -50,7 +50,7 @@ def prepare_ruf_inputs(
 ):
 
     # select relevant features
-    df_input = deepcopy(
+    df_processed = deepcopy(
         df_input[
             [
                 "id",
@@ -62,14 +62,14 @@ def prepare_ruf_inputs(
         ]
     )
 
-    all_household_ids = df_input["household_id"].unique()
+    all_household_ids = df_processed["household_id"].unique()
     long_data = []
     for index1, proc_hhld_id in enumerate(all_household_ids):
         
         if index1 % 10 == 0:
             logger.info(f"Processing input: {round(100 * index1 / len(all_household_ids), 3)}%")
 
-        proc_hhld = df_input[df_input["household_id"] == proc_hhld_id]
+        proc_hhld = df_processed[df_processed["household_id"] == proc_hhld_id]
 
         num_people = len(proc_hhld)
         all_possible_hours_combination = list(
@@ -83,7 +83,7 @@ def prepare_ruf_inputs(
             ),
         )
 
-        for proc_combination in all_possible_hours_combination:
+        for i_comb, proc_combination in enumerate(all_possible_hours_combination):
 
             is_chosen = 0
             if proc_combination == chosen_combination:
@@ -108,6 +108,7 @@ def prepare_ruf_inputs(
                 if proc_person["selected"]:
                     proc_data_list.append(
                         {
+                            "option_hours_id": i_comb,
                             "household_id": int(proc_hhld["household_id"].values[0]),
                             "people_id": int(proc_person["id"]),
                             "option_hours": proc_hours,
@@ -133,6 +134,7 @@ def prepare_ruf_inputs(
     for proc_key in ["income", "income_hhld", "leisure"]:
         results[proc_key] = results[proc_key] / data_scaler
 
-    results = results.sort_values(by=["household_id", "people_id", "option_hours"]).reset_index(drop=True)
+    results = results.sort_values(by=[
+        "household_id", "people_id", "option_hours"]).reset_index(drop=True)
     
     pq_write_table(pa.Table.from_pandas(results), data_output_path)

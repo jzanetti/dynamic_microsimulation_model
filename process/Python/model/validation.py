@@ -3,9 +3,8 @@ from pyarrow.parquet import read_table as pq_read_table
 from pandas import read_csv
 from pandas import DataFrame
 from numpy import arange, array, histogram
-from numpy import where, isclose, mean
+from numpy import where, isclose
 from process.Python.model.random_utlity_function import predict as ruf_predict
-from process.Python.vis import plot_intermediate
 from logging import getLogger
 from process.Python.data.filename import create_hash_filename
 from process.Python import RUF_METHOD
@@ -19,11 +18,12 @@ def run_ruf_sensitivity(
     input_params: dict, 
     income_scaler: list = arange(0.5, 2.0, 0.1), 
     output_dir: str = "",
+    tawa_data_name: str = "sq",
     plot_using_ratio: bool = True,
     method = RUF_METHOD
 ):
 
-    filename_hash = create_hash_filename(input_params)
+    filename_hash = create_hash_filename(input_params, filename_suffix=tawa_data_name)
     data_output_path = f"{output_dir}/utility_func_data_{filename_hash}.parquet"
     model_output_path = f'{output_dir}/utility_func_parameters_{filename_hash}.csv'
     accuracy_output_path = f'{output_dir}/validation_score_{filename_hash}.csv'
@@ -42,53 +42,21 @@ def run_ruf_sensitivity(
     model_accuracy = model_accuracy.set_index('scores')['value'].to_dict()
 
     results = {
-        "full_time": [],
-        "part_time": [],
         "total_employment_hrs": [],
         "scaler": income_scaler
     }
 
     for scaler in income_scaler:
-
         logger.info(f"Processing sensitivity study for scaler: {scaler}")
         predicted_choices = ruf_predict(data_to_check, model_params, method = method, scaler=scaler)
 
-        full_time_employment_rate = round(
-            len(predicted_choices[predicted_choices["option_hours"] >= input_params["hours_options"][-1]])
-            / len(predicted_choices)
-            * 100,
-            2,
-        )
-        part_time_employment_rate = round(
-            len(
-                predicted_choices[
-                    (predicted_choices["option_hours"] >= input_params["hours_options"][1]) & (
-                       predicted_choices["option_hours"] < input_params["hours_options"][-1] 
-                    )
-                ]
-            )
-            / len(predicted_choices)
-            * 100,
-            2,
-        )
-
-        results["full_time"].append(full_time_employment_rate)
-        results["part_time"].append(part_time_employment_rate)
-        #results["total_employment_hrs"].append(
-        #    sum(predicted_choices["option_hours"] * predicted_choices["is_chosen"])
-        #)
-
-        #predicted_choices = data_to_check.loc[
-        #    data_to_check.groupby("people_id")["utlity"].idxmax()
-        #]
-
         results["total_employment_hrs"].append(
-            sum(predicted_choices.groupby("people_id")["option_hours"].mean())
+            sum(predicted_choices.groupby("people_id")["hours"].mean())
         )
 
     if plot_using_ratio:
         index = where(isclose(results["scaler"], 1.0, atol=1.0/1e5))[0][0]
-        for proc_key in ["full_time", "part_time", "total_employment_hrs"]:
+        for proc_key in ["total_employment_hrs"]:
             results[proc_key] = array(results[proc_key])
             results[proc_key] = results[proc_key] / results[proc_key][index]
 
@@ -96,9 +64,9 @@ def run_ruf_sensitivity(
     DataFrame(results).to_csv(results_path)
     
 
-def run_ruf_validation(input_params: dict, output_dir: str, method=RUF_METHOD):
+def run_ruf_validation(input_params: dict, tawa_data_name: str, output_dir: str, method=RUF_METHOD):
 
-    filename_hash = create_hash_filename(input_params)
+    filename_hash = create_hash_filename(input_params, filename_suffix=tawa_data_name)
 
     data = pq_read_table(f"{output_dir}/utility_func_data_{filename_hash}.parquet")
     data = data.to_pandas()
@@ -122,7 +90,9 @@ def run_ruf_validation(input_params: dict, output_dir: str, method=RUF_METHOD):
     r2_mcfadden = 1 - (ll_model / ll_null)
 
     # 2. Calculate utility accuracy
-    predicted_choices = ruf_predict(data, params, method=method)
+    # data = data[(data["people_id"] == 9) & (data["option_hours_id"].isin([1175, 1176]))]
+    df_clean = data.drop(columns=["calibrated_err"])
+    predicted_choices = ruf_predict(df_clean, params, method=method)
 
     pred_n = len(predicted_choices[predicted_choices["is_chosen"] == 1])
     truth_n = len(data[data["is_chosen"] == 1])
@@ -132,10 +102,12 @@ def run_ruf_validation(input_params: dict, output_dir: str, method=RUF_METHOD):
     if method == "top30":
         pred_hrs = sum(data.groupby("people_id")["option_hours"].mean())
     else:
-        pred_hrs = predicted_choices[predicted_choices["is_chosen"] == 1]["option_hours"].sum()
+        pred_hrs = predicted_choices[predicted_choices["is_chosen"] == 1]["hours"].sum()
 
     # 4. Show calibration distribution
+    # data["cal_err_ratio"] = data["calibrated_err"] / data["utility"]
     counts, bin_edges = histogram(data["calibrated_err"], bins=50)
+    # counts, bin_edges = histogram(data["cal_err_ratio"], bins=50)
     err_dist = DataFrame({
         'bin_start': bin_edges[:-1],
         'bin_end': bin_edges[1:],

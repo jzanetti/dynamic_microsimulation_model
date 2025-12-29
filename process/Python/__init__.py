@@ -9,7 +9,7 @@ basicConfig(
 
 TEST_RUN = False
 
-RUF_METHOD = "top30" # top30 or None
+RUF_METHOD = None # top30 or None
 
 
 RUN_LOG = True

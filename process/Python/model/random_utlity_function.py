@@ -1,4 +1,4 @@
-from pandas import DataFrame
+from pandas import DataFrame, merge
 from pandas import Series as pd_series
 from numpy import exp as np_exp
 from numpy import sum as np_sum
@@ -10,7 +10,7 @@ from logging import getLogger
 from process.Python.data.input import prepare_ruf_inputs
 from pyarrow.parquet import read_table as pq_read_table
 from os.path import exists
-from process.Python import RUN_LOG
+from process.Python import RUN_LOG, RUF_METHOD
 from process.Python.data.filename import create_hash_filename
 from pandas import read_csv
 from pyarrow.parquet import write_table as pq_write_table
@@ -19,7 +19,7 @@ logger = getLogger()
 
 
 def cal_utility(data: DataFrame, params: dict, income_scaler: float = 1.0) -> DataFrame:
-    scaled_leisure = data["leisure"]
+
     data["utility"] = quadratic_utility(
         (
             params["beta_income_hhld"], 
@@ -30,7 +30,7 @@ def cal_utility(data: DataFrame, params: dict, income_scaler: float = 1.0) -> Da
         ), 
         data["income"] * income_scaler, 
         data["income_hhld"] * income_scaler, 
-        scaled_leisure
+        data["leisure"]
     )
 
     if "calibrated_err" in data:
@@ -39,7 +39,7 @@ def cal_utility(data: DataFrame, params: dict, income_scaler: float = 1.0) -> Da
     return data
 
 
-def run_ruf_calibrate(input_params: dict, output_dir: str):
+def run_ruf_calibrate(input_params: dict, tawa_data_name: str, output_dir: str):
 
     def _obtain_err(group):
         # Identify the observed choice (where is_chosen == 1)
@@ -69,30 +69,28 @@ def run_ruf_calibrate(input_params: dict, output_dir: str):
         return epsilons
     
     logger.info("Calibrating the RUF function ...")
-    filename_hash = create_hash_filename(input_params)
 
-    data = pq_read_table(f"{output_dir}/utility_func_data_{filename_hash}.parquet")
+    filename_hash = create_hash_filename(input_params, filename_suffix=tawa_data_name)
+    ruf_data_path = f"{output_dir}/utility_func_data_{filename_hash}.parquet"
+    ruf_params_path = f"{output_dir}/utility_func_parameters_{filename_hash}.csv"
+
+    data = pq_read_table(ruf_data_path)
     data = data.to_pandas()
-    params = read_csv(f"{output_dir}/utility_func_parameters_{filename_hash}.csv")
-    params = params.set_index('parameter')['Value'].to_dict()
+    params = read_csv(ruf_params_path)
 
-    data = cal_utility(data, params)
+    data = cal_utility(data, params.set_index("parameter")["Value"].to_dict())
     data["calibrated_err"] = data.groupby("people_id", group_keys=False).apply(_obtain_err)
-    data = data.drop(columns=['utility'])
-    # data['utlity_calibrated'] = data['utlity'] + data['calibrated_err']
-    # Check if the chosen option now has the maximum utility
-    # verification = data.groupby('people_id').apply(
-    #   lambda x: x.loc[x['is_chosen']==1, 'utlity_calibrated'].values[0] == x['utlity_calibrated'].max())
-    # logger.info(f"Calibration successful for all people: {verification.all()}")
+    data = data.drop(columns=["utility"])
 
-    pq_write_table(pa.Table.from_pandas(data), f"{output_dir}/utility_func_data_{filename_hash}.parquet")
+    pq_write_table(pa.Table.from_pandas(data), ruf_data_path)
     
 
 
 def predict(data: DataFrame, 
             params: dict, 
-            method: str = "top30", 
-            scaler: float = 1.0):
+            method: str = RUF_METHOD, 
+            scaler: float = 1.0,
+            use_hhld: bool = False):
 
     data = cal_utility(data, params, income_scaler=scaler)
 
@@ -105,9 +103,26 @@ def predict(data: DataFrame,
             "people_id")[utility_name].transform(lambda x: x.quantile(1 - 0.3))
         predictions = data.loc[
             data[utility_name] >= utility_thresholds]
+        predictions["hours"] = predictions.groupby(["household_id", "people_id"])["option_hours"].transform("mean")
+        # predictions = predictions[["household_id", "people_id", "hours"]].drop_duplicates()
     else:
-        predictions = data.loc[
-            data.groupby("people_id")[utility_name].idxmax()]
+        if use_hhld:
+            hhld_total_utility = data.groupby([
+                "household_id", "option_hours_id"], as_index=False)[utility_name].sum()
+            hhld_best_option = hhld_total_utility.loc[hhld_total_utility.groupby('household_id')[utility_name].idxmax()]
+            predictions = merge(
+                data, 
+                hhld_best_option[['household_id', 'option_hours_id']], 
+                on=['household_id', 'option_hours_id'], 
+                how='inner'
+            )
+        else:
+            predictions = data.loc[
+                data.groupby(["people_id"])[utility_name].idxmax()]
+
+        predictions = predictions.rename(columns={
+                "option_hours": "hours"
+        })
 
     return predictions
 
@@ -176,40 +191,23 @@ def quadratic_utility(params, income, income_hhld, leisure, show_debug = False, 
 
 
 def utility_func(
-    df_input: DataFrame,
     params: dict,
+    tawa_data_name: str = "sq",
     output_dir: str = "",
-    income_name: str = "income_per_hour",
-    working_hours_name: str = "working_hours",
+    hours_options: list = [0, 20, 40],
     params_dict: dict = {
-        "beta_income_hhld": {"initial": 0.1, "bound": (1e-6, 15.0)},
-        "beta_income_hhld2": {"initial": -0.01, "bound": (-15.0, -1e-6)},
-        "beta_leisure": {"initial": 0.1, "bound": (1e-6, 15.0)},
-        "beta_leisure2": {"initial": -0.01, "bound": (-15.0, -1e-6)},
-        "beta_interaction": {"initial": 0.1, "bound": (-15.0, 15.0)}
+        "beta_income_hhld": {"initial": 0.1, "bound": (1e-6, None)},
+        "beta_income_hhld2": {"initial": -0.01, "bound": (None, -1e-6)},
+        "beta_leisure": {"initial": 0.1, "bound": (1e-6, None)},
+        "beta_leisure2": {"initial": -0.01, "bound": (None, -1e-6)},
+        "beta_interaction": {"initial": 0.1, "bound": (None, None)}
     },
-    recreate_data: bool = True
 ):
 
-    hours_options = params["hours_options"]
-    total_hours = params["total_hours"]
-    leisure_value = params["leisure_value"]
-
-    filename_hash = create_hash_filename(params)
+    filename_hash = create_hash_filename(params, filename_suffix=tawa_data_name)
 
     data_output_path = f"{output_dir}/utility_func_data_{filename_hash}.parquet"
     model_output_path = f'{output_dir}/utility_func_parameters_{filename_hash}.csv'
-
-    if recreate_data or (not exists(data_output_path)):
-        prepare_ruf_inputs(
-            df_input,
-            hours_options,
-            total_hours,
-            leisure_value,
-            income_name,
-            working_hours_name,
-            data_output_path=data_output_path
-        )
 
     proc_data = pq_read_table(data_output_path)
     proc_data = proc_data.to_pandas()
@@ -217,11 +215,15 @@ def utility_func(
     initial_guess = [v["initial"] for v in params_dict.values()]
     bounds = [v["bound"] for v in params_dict.values()]
 
+    print("Start running optimization ...")
+    proc_data = proc_data.sort_values(by=[
+        "household_id", "people_id", "option_hours"]).reset_index(drop=True)
+
     result = scipy_minimize(
         fun=negative_log_likelihood,
         x0=initial_guess,
         args=(
-            proc_data,
+            proc_data[["income", "income_hhld", "leisure", "is_chosen"]],
             len(hours_options)
         ),
         method="L-BFGS-B",
@@ -240,3 +242,29 @@ def utility_func(
 
     logger.info(f"The model estimated paramaters are written to {model_output_path}")
     df.to_csv(model_output_path)
+
+
+"""
+# proc_data2 = pq_read_table("test2.parquet")
+proc_data2 = pq_read_table("etc/app/runs/utility_func_data_aee9ef9b4875e727f4357144600222d2_sq.parquet")
+proc_data2 = proc_data2.to_pandas()
+sort_cols = ['household_id', 'people_id', 'option_hours', 'option_hours_id']
+
+# 2. Sort and reset index for BOTH dataframes
+df2 = proc_data2.sort_values(by=sort_cols).reset_index(drop=True)
+df1 = proc_data.sort_values(by=sort_cols).reset_index(drop=True)
+
+df2["option_hours_id"] = df2["option_hours_id"].astype(int)
+
+import pandas as pd
+pd.testing.assert_frame_equal(
+    df2.astype(object), 
+    df1.astype(object), 
+    check_dtype=False
+)
+negative_log_likelihood(initial_guess, proc_data, len(hours_options))
+proc_data2  = proc_data2.sort_values(by=[
+    "household_id", "people_id", "option_hours"]).reset_index(drop=True)
+"""
+#proc_data2 = pq_read_table("etc/app/runs/utility_func_data_aee9ef9b4875e727f4357144600222d2_sq.parquet")
+#proc_data2 = proc_data2.to_pandas()
