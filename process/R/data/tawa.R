@@ -10,13 +10,13 @@ run_tawa_predict <- function(tawa_data, output_dir, input_params, updated_tawa_d
   # Run Preprocess
   ref_ids <- unique(data_sq$people_id)
   
-  #data_tawa_env$tawa_data_preprocess(
-  #  tawa_data = tawa_data,
-  #  input_params = input_params,
-  #  tawa_data_name = "test2",
-  #  output_dir = output_dir,
-  #  ref_ids = ref_ids
-  #)
+  data_tawa_env$tawa_data_preprocess(
+    tawa_data = tawa_data,
+    input_params = input_params,
+    tawa_data_name = "test2",
+    output_dir = output_dir,
+    ref_ids = ref_ids
+  )
   
   run_ruf_for_tawa(
     tawa_data = tawa_data,

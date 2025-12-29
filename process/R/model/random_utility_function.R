@@ -226,7 +226,7 @@ utility_func <- function(
       "beta_interaction" = list("initial" = 0.1, "bound" = c(-Inf, Inf))
     ),
     optima_method = "nloptr", # optim, nloptr, lbfgsb3c
-    maxit = 500
+    maxit = 1000
 ) {
   
   # ----------------------------

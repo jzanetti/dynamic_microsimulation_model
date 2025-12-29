@@ -20,10 +20,10 @@ source("process/R/model/validation.R", local = model_validation_env)
 # ------------------------------------------------------------------------------
 # Configuration
 # ------------------------------------------------------------------------------
-run_model       <- FALSE
-run_calib       <- FALSE
-run_validation  <- FALSE
-run_sensitivity <- FALSE
+run_model       <- TRUE
+run_calib       <- TRUE
+run_validation  <- TRUE
+run_sensitivity <- TRUE
 run_predict     <- TRUE
 
 output_dir <- "etc/app/runs"
