@@ -20,10 +20,10 @@ source("process/R/model/validation.R", local = model_validation_env)
 # ------------------------------------------------------------------------------
 # Configuration
 # ------------------------------------------------------------------------------
-run_model       <- TRUE
-run_calib       <- TRUE
-run_validation  <- TRUE
-run_sensitivity <- TRUE
+run_model       <- FALSE
+run_calib       <- FALSE
+run_validation  <- FALSE
+run_sensitivity <- FALSE
 run_predict     <- TRUE
 
 output_dir <- "etc/app/runs"
@@ -58,6 +58,7 @@ input_params <- list(
 tawa_data <- list(
   input = fread("etc/app/Synthetic-HES23-single-period.csv"),
   sq    = fread("etc/app/TY25_BEFU24_SQ.csv.gz"),
+  sq2    = fread("etc/app/TY25_BEFU24_SQ2.csv.gz"),
   sijin = fread("etc/app/TY25_BEFU24_sijin.csv.gz"),
   test2 = fread("etc/app/TY25_BEFU24_test2.csv.gz")
 )
@@ -125,6 +126,7 @@ if (run_predict) {
     tawa_data = tawa_data,
     output_dir = output_dir,
     input_params = input_params,
+    "test2",
     updated_tawa_data_path = "etc/app/Synthetic-HES23-single-period-updated2.csv"
   )
 }

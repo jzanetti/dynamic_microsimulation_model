@@ -101,6 +101,11 @@ run_ruf_calibrate <- function(input_params, tawa_data_name, output_dir) {
       term <- exp(-threshold) - log(u_j)
       eps_j <- -log(term)
       
+      # for numerical stability, when the threshold is too big, the RUF model gives too much error
+      if (! (V_k + eps_k > V_j + eps_j)) {
+        eps_j = -99999.0
+      }
+      
       epsilons[j_idx] <- eps_j
     }
     
@@ -176,7 +181,6 @@ predict <- function(data, params, method = RUF_METHOD, scaler = 1.0, use_hhld = 
   
   return(predictions)
 }
-
 
 negative_log_likelihood <- function(params, df, options_n) {
 

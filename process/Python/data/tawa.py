@@ -20,15 +20,16 @@ from pyarrow.parquet import read_table as pq_read_table
 logger = getLogger()
 
 
-def run_tawa_predict(tawa_data: dict, output_dir: str, input_params: dict, updated_tawa_data_path: str):
+def run_tawa_predict(tawa_data: dict, output_dir: str, input_params: dict, reform_name: str, updated_tawa_data_path: str):
 
     filename_hash = create_hash_filename(input_params, filename_suffix = "sq")
     data_sq = pq_read_table(f"{output_dir}/utility_func_data_{filename_hash}.parquet")
     data_sq = data_sq.to_pandas()
+
     tawa_data_preprocess(
         tawa_data,
         input_params, 
-        tawa_data_name = "test2",
+        tawa_data_name = reform_name,
         output_dir = output_dir,
         ref_ids = list(data_sq["people_id"].unique()))
 
@@ -36,7 +37,7 @@ def run_tawa_predict(tawa_data: dict, output_dir: str, input_params: dict, updat
         tawa_data, 
         input_params,
         updated_tawa_data_path = updated_tawa_data_path,
-        tawa_data_name = "test2", 
+        tawa_data_name = reform_name, 
         output_dir = output_dir)
 
 
@@ -301,14 +302,10 @@ def tawa_data_preprocess(
     if ref_ids is not None:
         df = df[df["id"].isin(ref_ids)]
 
-    df2 = pq_read_table("test2.parquet")
-    df2 = df2.to_pandas()
-
     # ---------------------------------------------
     # Step 7: Prepare RUF inputs
     # ---------------------------------------------
     filename_hash = create_hash_filename(input_params, filename_suffix=tawa_data_name)
-
     prepare_ruf_inputs(
         df,
         hours_options,

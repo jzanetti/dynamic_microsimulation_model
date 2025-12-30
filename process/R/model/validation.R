@@ -116,7 +116,6 @@ run_ruf_validation <- function(input_params, tawa_data_name, output_dir, method 
   } else {
     df_clean <- copy(data)
   }
-
   predicted_choices <- model_ruf_env$predict(df_clean, params, method = method)
   setDT(predicted_choices)
   

@@ -1,4 +1,9 @@
-run_tawa_predict <- function(tawa_data, output_dir, input_params, updated_tawa_data_path) {
+run_tawa_predict <- function(
+    tawa_data, 
+    output_dir, 
+    input_params, 
+    reform_name, 
+    updated_tawa_data_path) {
   
   filename_hash_sq <- data_filename_env$create_hash_filename(input_params, filename_suffix = "sq")
   
@@ -13,7 +18,7 @@ run_tawa_predict <- function(tawa_data, output_dir, input_params, updated_tawa_d
   data_tawa_env$tawa_data_preprocess(
     tawa_data = tawa_data,
     input_params = input_params,
-    tawa_data_name = "test2",
+    tawa_data_name = reform_name,
     output_dir = output_dir,
     ref_ids = ref_ids
   )
@@ -22,7 +27,7 @@ run_tawa_predict <- function(tawa_data, output_dir, input_params, updated_tawa_d
     tawa_data = tawa_data,
     input_params = input_params,
     updated_tawa_data_path = updated_tawa_data_path,
-    tawa_data_name = "test2",
+    tawa_data_name = reform_name,
     output_dir = output_dir
   )
 }
@@ -342,7 +347,7 @@ tawa_data_preprocess <- function(
   filename_hash <- data_filename_env$create_hash_filename(input_params, filename_suffix = tawa_data_name)
   
   output_path <- file.path(output_dir, paste0("utility_func_data_", filename_hash, ".parquet"))
-  
+
   # Call external prepare_ruf_inputs function
   data_input_env$prepare_ruf_inputs(
     df,

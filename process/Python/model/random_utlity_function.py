@@ -59,11 +59,17 @@ def run_ruf_calibrate(input_params: dict, tawa_data_name: str, output_dir: str):
             if j_idx == k_idx:
                 continue
             V_j = group.loc[j_idx, 'utility']
+            
             u_j = np_uniform(0, 1)
             
             # Upper bound for the unchosen error
             threshold = eps_k + V_k - V_j
             eps_j = -np_log(np_exp(-threshold) - np_log(u_j))
+
+            # for numerical stability, when the threshold is too big, the RUF model gives too much error
+            if not V_k + eps_k > V_j + eps_j:
+                eps_j = -99999.0
+
             epsilons.loc[j_idx] = eps_j
             
         return epsilons

@@ -7,10 +7,10 @@ from process.Python.data.tawa import run_tawa_predict, tawa_data_preprocess
 from process.Python.vis import plot_intermediate
 
 
-run_model = True
-run_calib = True
-run_validation = True
-run_sensitivity = True
+run_model = False
+run_calib = False
+run_validation = False
+run_sensitivity = False
 run_predict = True
 output_dir = "etc/app/runs"
 input_params = {
@@ -33,6 +33,7 @@ input_params = {
 tawa_data = {
     "input": read_csv("etc/app/Synthetic-HES23-single-period.csv"),
     "sq": read_csv("etc/app/TY25_BEFU24_SQ.csv.gz"),
+    "sq2": read_csv("etc/app/TY25_BEFU24_SQ2.csv.gz"),
     "sijin": read_csv("etc/app/TY25_BEFU24_sijin.csv.gz"),
     "test2": read_csv("etc/app/TY25_BEFU24_test2.csv.gz")
 }
@@ -64,7 +65,7 @@ if run_sensitivity:
         input_params,
         "ruf_sensitivity",
         tawa_data_name = "sq",
-        output_dir = output_dir)
+        output_dir = output_dir) 
 
 
 if run_predict:
@@ -72,4 +73,5 @@ if run_predict:
         tawa_data, 
         output_dir, 
         input_params,
+        "test2",
         updated_tawa_data_path = "etc/app/Synthetic-HES23-single-period-updated.csv")
