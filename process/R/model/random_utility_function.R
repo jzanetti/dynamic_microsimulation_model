@@ -264,7 +264,7 @@ utility_func <- function(
   # Optimization
   # ----------------------------
   print(paste0("Start running optimization ..., using ", optima_method))
-  
+
   proc_data <- proc_data %>%
     arrange(household_id, people_id, option_hours)
   
