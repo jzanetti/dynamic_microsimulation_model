@@ -7,6 +7,8 @@ source("process/R/data/sample.R", local = data_sample_env)
 source("process/R/data/tawa.R", local = data_tawa_env)
 source("process/R/model/wrapper.R", local = model_wrapper_env)
 source("process/R/model/linear.R", local = model_linear_env)
+source("process/R/model/xgboost.R", local = model_xgboost_env)
+source("process/R/model/tax_calculator.R", local = model_tax_calculator_env)
 source("process/R/model/heckman_wage.R", local = model_heckman_wage_env)
 source("process/R/vis.R", local = vis_env)
 source("process/R/dmm.R", local = dmm_env)
@@ -20,10 +22,10 @@ source("process/R/model/validation.R", local = model_validation_env)
 # ------------------------------------------------------------------------------
 # Configuration
 # ------------------------------------------------------------------------------
-run_model       <- FALSE
-run_calib       <- FALSE
-run_validation  <- FALSE
-run_sensitivity <- FALSE
+run_model       <- TRUE
+run_calib       <- TRUE
+run_validation  <- TRUE
+run_sensitivity <- TRUE
 run_predict     <- TRUE
 
 output_dir <- "etc/app/runs"
@@ -32,7 +34,7 @@ output_dir <- "etc/app/runs"
 input_params <- list(
   total_hours       = 80.0,
   min_hourly_wage   = 23.0,
-  leisure_value     = 23.0,
+  leisure_value     = 1.0,
   exclude_seniors   = TRUE,
   hours_options     = c(0, 10, 20, 30, 40),
   
@@ -40,7 +42,7 @@ input_params <- list(
   apply_people_income_filter = NULL, 
   # apply_people_income_filter = list(min = 0.1, max = 0.5),
   
-  apply_household_income_filter = list(min = 0.7, max = 0.9),
+  apply_household_income_filter = list(min = 0.1, max = 0.9),
   apply_household_size_filter   = NULL,
   apply_earner_type_filter      = NULL
   
@@ -57,10 +59,8 @@ input_params <- list(
 # Using fread for performance (equivalent to read_csv but faster)
 tawa_data <- list(
   input = fread("etc/app/Synthetic-HES23-single-period.csv"),
-  sq    = fread("etc/app/TY25_BEFU24_SQ.csv.gz"),
-  sq2    = fread("etc/app/TY25_BEFU24_SQ2.csv.gz"),
-  sijin = fread("etc/app/TY25_BEFU24_sijin.csv.gz"),
-  test2 = fread("etc/app/TY25_BEFU24_test2.csv.gz")
+  sq    = fread("etc/app/TY25_BEFU24_SQ.csv"),
+  test2 = fread("etc/app/TY25_BEFU24_test2.csv")
 )
 
 # ------------------------------------------------------------------------------

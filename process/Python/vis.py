@@ -11,7 +11,10 @@ from matplotlib.pyplot import (
     ylabel,
     axvline,
     axhline,
-    bar
+    scatter,
+    bar,
+    colorbar,
+    subplot,
 )
 import matplotlib.ticker as mtick
 from matplotlib.ticker import MaxNLocator
@@ -24,46 +27,127 @@ from os import makedirs
 from pandas import DataFrame
 from os.path import join
 from pandas import read_csv
+from numpy import linspace
+from process.Python.model.random_utlity_function import quadratic_utility
+from pyarrow.parquet import read_table as pq_read_table
 
 
-def plot_intermediate(input_params: dict, data_name: str, tawa_data_name: str = "sq", output_dir: str = "/tmp"):
+def plot_intermediate(
+    input_params: dict,
+    data_name: str,
+    tawa_data_name: str = "sq",
+    output_dir: str = "/tmp",
+):
     filename_hash = create_hash_filename(input_params, filename_suffix=tawa_data_name)
     if data_name == "ruf_validation":
         err_dist_results = read_csv(f"{output_dir}/validation_err_{filename_hash}.csv")
         subplots(figsize=(10, 6))
-        bin_width = err_dist_results['bin_end'] - err_dist_results['bin_start']
+        bin_width = err_dist_results["bin_end"] - err_dist_results["bin_start"]
 
         bar(
-            err_dist_results['bin_start'], 
-            err_dist_results['count'], 
-            width=bin_width, 
-            align='edge', 
-            edgecolor='black',
-            alpha=0.7
+            err_dist_results["bin_start"],
+            err_dist_results["count"],
+            width=bin_width,
+            align="edge",
+            edgecolor="black",
+            alpha=0.7,
         )
 
         output_path = join(output_dir, f"ruf_validation_err_dist_{filename_hash}.png")
         savefig(output_path, bbox_inches="tight")
         close()
+
+        param_results = read_csv(
+            f"{output_dir}/utility_func_parameters_{filename_hash}.csv"
+        )
+        params = param_results.set_index("parameter")["Value"].to_dict()
+        params_list = []
+        for proc_key in [
+            "beta_income_hhld",
+            "beta_income_hhld2",
+            "beta_leisure",
+            "beta_leisure2",
+            "beta_interaction",
+        ]:
+            params_list.append(params[proc_key])
+
+        data_to_check = pq_read_table(
+            f"{output_dir}/utility_func_data_{filename_hash}.parquet"
+        )
+        data_to_check = data_to_check.to_pandas()
+
+        data_to_check["Z"] = quadratic_utility(
+            params_list,
+            data_to_check["income"].values,
+            data_to_check["income_hhld"].values,
+            data_to_check["leisure"].values,
+        )
+
+        fig, (ax1, ax2) = subplots(1, 2, figsize=(14, 6), constrained_layout=True)
+
+        # 2. First Plot (Individual Income)
+        sc = ax1.scatter(
+            data_to_check["income"] * 1000,
+            data_to_check["Z"],
+            c=data_to_check["leisure"] * 1000 / 23,
+            cmap="viridis",
+            alpha=0.7,
+            s=25,
+        )
+        ax1.set_xlabel("Disposable Income ($, individual) per week")
+        ax1.set_ylabel("Utility")
+
+        # 3. Second Plot (Household Income)
+        ax2.scatter(
+            data_to_check["income_hhld"] * 1000,
+            data_to_check["Z"],
+            c=data_to_check["leisure"] * 1000 / 23,
+            cmap="viridis",
+            alpha=0.7,
+            s=25,
+        )
+        ax2.set_xlabel("Disposable Income ($, household) per week")
+        ax2.set_ylabel("Utility")
+
+        # 4. Create one shared colorbar using the 'sc' mappable
+        cbar = fig.colorbar(sc, ax=[ax1, ax2], location="right", aspect=30)
+        cbar.set_label("Leisure (hours)")
+
+        # Save the figure
+        output_path = join(output_dir, f"ruf_validation_scatter_{filename_hash}.png")
+        savefig(output_path, bbox_inches="tight")
+        close()
+
         print(f"The plots are written with hashname: {filename_hash}")
 
     if data_name == "ruf_sensitivity":
 
-        output_path1 = join(output_dir, f"utility_employment_rate_{filename_hash}.png")
         output_path2 = join(output_dir, f"ruf_total_employment_hrs_{filename_hash}.png")
 
-        sensitivity_results = read_csv(f"{output_dir}/sensitivity_tests_{filename_hash}.csv")
-        accuacry_results = read_csv(f"{output_dir}/validation_score_{filename_hash}.csv")
+        sensitivity_results = read_csv(
+            f"{output_dir}/sensitivity_tests_{filename_hash}.csv"
+        )
+        accuacry_results = read_csv(
+            f"{output_dir}/validation_score_{filename_hash}.csv"
+        )
 
-        highest_utility_accuracy = accuacry_results[accuacry_results["scores"] == "highest_utility_accuracy"]["value"].values[0]
-        total_hrs_accuracy = accuacry_results[accuacry_results["scores"] == "total_hrs_accuracy"]["value"].values[0]
-        r2_mcfadden = accuacry_results[accuacry_results["scores"] == "r2_mcfadden"]["value"].values[0]
-        accuacry_score_str = f"Total Utility Accuracy: " + \
-            f"{round(highest_utility_accuracy, 2)} %, " + \
-            "Total Hours Accuracy: " + \
-            f"{round(total_hrs_accuracy, 2)} %; " + \
-            "McFadden's R2: " + \
-            f"{round(r2_mcfadden, 2)}"
+        highest_utility_accuracy = accuacry_results[
+            accuacry_results["scores"] == "highest_utility_accuracy"
+        ]["value"].values[0]
+        total_hrs_accuracy = accuacry_results[
+            accuacry_results["scores"] == "total_hrs_accuracy"
+        ]["value"].values[0]
+        r2_mcfadden = accuacry_results[accuacry_results["scores"] == "r2_mcfadden"][
+            "value"
+        ].values[0]
+        accuacry_score_str = (
+            f"Total Utility Accuracy: "
+            + f"{round(highest_utility_accuracy, 2)} %, "
+            + "Total Hours Accuracy: "
+            + f"{round(total_hrs_accuracy, 2)} %; "
+            + "McFadden's R2: "
+            + f"{round(r2_mcfadden, 2)}"
+        )
 
         """
         subplots(figsize=(10, 6))
@@ -81,8 +165,8 @@ def plot_intermediate(input_params: dict, data_name: str, tawa_data_name: str = 
         """
         subplots(figsize=(10, 6))
         plot(sensitivity_results["scaler"], sensitivity_results["total_employment_hrs"])
-        axvline(x=1.0, color='r', linestyle='--')
-        axhline(y=1.0, color='b', linestyle='--')
+        axvline(x=1.0, color="r", linestyle="--")
+        axhline(y=1.0, color="b", linestyle="--")
         gca().yaxis.set_major_formatter(mtick.PercentFormatter(xmax=1.0))
         title(
             f"Employment behaviours with Random Utility Function \n {accuacry_score_str}"

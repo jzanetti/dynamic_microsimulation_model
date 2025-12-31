@@ -5,9 +5,12 @@ from os.path import join
 from pandas import DataFrame
 from copy import deepcopy
 from itertools import product as iter_product
+from process.Python.model.xgboost import xgboost_model
 from logging import getLogger
+from process.Python.model.tax_calculator import cal_tax
 
 logger = getLogger()
+
 
 def add_initial_pop_status(pop: DataFrame) -> DataFrame:
     pop["life_stage"] = "alive"
@@ -39,14 +42,15 @@ def create_inputs(
 
 
 def prepare_ruf_inputs(
-    df_input: DataFrame, 
-    hours_options: list, 
-    total_hours: int, 
-    leisure_value: float, 
-    income_name: str, 
-    working_hours_name: str, 
+    df_input: DataFrame,
+    hours_options: list,
+    total_hours: int,
+    leisure_value: float,
+    market_income_name_per_hour: str,
+    benefit_income_name_per_week: str,
+    working_hours_name: str,
     data_scaler: float = 1000.0,
-    data_output_path: str = None
+    data_output_path: str = None,
 ):
 
     # select relevant features
@@ -56,7 +60,8 @@ def prepare_ruf_inputs(
                 "id",
                 "household_id",
                 "selected",
-                income_name,
+                market_income_name_per_hour,
+                benefit_income_name_per_week,
                 working_hours_name,
             ]
         ]
@@ -65,9 +70,11 @@ def prepare_ruf_inputs(
     all_household_ids = df_processed["household_id"].unique()
     long_data = []
     for index1, proc_hhld_id in enumerate(all_household_ids):
-        
+
         if index1 % 10 == 0:
-            logger.info(f"Processing input: {round(100 * index1 / len(all_household_ids), 3)}%")
+            logger.info(
+                f"Processing input: {round(100 * index1 / len(all_household_ids), 3)}%"
+            )
 
         proc_hhld = df_processed[df_processed["household_id"] == proc_hhld_id]
 
@@ -90,21 +97,19 @@ def prepare_ruf_inputs(
                 is_chosen = 1
 
             proc_data_list = []
-            proc_hhld_income = 0
+            proc_hhld_market_income = 0
+            proc_hhld_benefit_income = 0
             for index2, proc_hours in enumerate(proc_combination):
                 proc_person = proc_hhld.iloc[index2]
-                person_wage = proc_person[income_name]
+                person_wage = proc_person[market_income_name_per_hour]
                 leisure_hours = total_hours - proc_hours
 
-                if proc_hours > 0:
-                    market_income_person = person_wage * proc_hours
-                else:
-                    market_income_person = 1e-9
+                market_income_person = person_wage * proc_hours
+                benefit_income_person = proc_person[benefit_income_name_per_week]
 
-                gross_income_person = market_income_person
+                proc_hhld_market_income += market_income_person
+                proc_hhld_benefit_income += benefit_income_person
 
-                proc_hhld_income += gross_income_person
-                
                 if proc_person["selected"]:
                     proc_data_list.append(
                         {
@@ -113,28 +118,107 @@ def prepare_ruf_inputs(
                             "people_id": int(proc_person["id"]),
                             "option_hours": proc_hours,
                             "is_chosen": is_chosen,
-                            "income": gross_income_person,
+                            "market_income": market_income_person,
+                            "benefit_income": benefit_income_person,
                             "leisure": leisure_hours * leisure_value,
                         }
                     )
 
             for proc_data in proc_data_list:
-                if proc_hhld_income == 0:
-                    proc_hhld_income = 1e-9
-                proc_data["income_hhld"] = proc_hhld_income
-
+                proc_data["market_income_hhld"] = proc_hhld_market_income
+                proc_data["benefit_income_hhld"] = proc_hhld_benefit_income
             long_data.extend(proc_data_list)
 
-
     results = DataFrame(long_data)
-
+    income_cols = [
+        "market_income",
+        "benefit_income",
+        "market_income_hhld",
+        "benefit_income_hhld",
+    ]
+    results[income_cols] = results[income_cols].clip(lower=1e-9)
     # results = results.drop_duplicates()
+    results = obtain_benefit_income(results)
 
-    # results["income_to_income_hhld"] = results["income"] / results["income_hhld"]
+    # make the data scaled: e.g., income is between 0-2, leisure is between 0-1
     for proc_key in ["income", "income_hhld", "leisure"]:
         results[proc_key] = results[proc_key] / data_scaler
+    results["leisure"] = results["leisure"] * 23.0
 
-    results = results.sort_values(by=[
-        "household_id", "people_id", "option_hours"]).reset_index(drop=True)
-    
+    results = results.sort_values(
+        by=["household_id", "people_id", "option_hours"]
+    ).reset_index(drop=True)
+
     pq_write_table(pa.Table.from_pandas(results), data_output_path)
+
+
+def obtain_benefit_income(df: DataFrame) -> DataFrame:
+
+    logger.info("Predict benefit income using XGBoost model")
+
+    df_for_train = df[df["is_chosen"] == 1].reset_index(drop=True)
+    model = xgboost_model(
+        df_for_train, "benefit_income", ["market_income", "market_income_hhld"]
+    )
+    import xgboost as xgb
+
+    dpredict = xgb.DMatrix(
+        df[["market_income", "market_income_hhld"]].values.astype("float32")
+    )
+    df["benefit_income_pred"] = model.predict(dpredict)
+    # df["benefit_income_pred"] = model.predict(
+    #    df[["market_income", "market_income_hhld"]]
+    # )
+
+    df["income"] = df["market_income"] + df["benefit_income_pred"]
+    df["tax"] = cal_tax(df["income"])
+    df["income"] = df["income"] - df["tax"]
+    df["income_hhld"] = df.groupby(["option_hours_id", "household_id"])[
+        "income"
+    ].transform("sum")
+    df = df[
+        [
+            "option_hours_id",
+            "household_id",
+            "people_id",
+            "option_hours",
+            "is_chosen",
+            "leisure",
+            "market_income",
+            "benefit_income_pred",
+            "income",
+            "income_hhld",
+        ]
+    ]
+    return df
+
+
+"""
+import matplotlib.pyplot as plt
+
+plt.scatter(
+    df["market_income_hhld"],
+    df["benefit_income_pred"],
+    alpha=0.3,
+    s=5,
+)
+plt.scatter(
+    df["market_income_hhld"],
+    df["benefit_income"],
+    alpha=0.3,
+    c="r",
+    s=5,
+)
+plt.savefig("test.png")
+plt.close()
+df2 = df[
+    [
+        "people_id",
+        "household_id",
+        "benefit_income",
+        "benefit_income_pred",
+        "market_income",
+        "market_income_hhld",
+    ]
+]
+"""

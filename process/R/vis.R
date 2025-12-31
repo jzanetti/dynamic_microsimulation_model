@@ -1,5 +1,5 @@
 
-plot_intermediate <- function(input_params, data_name, tawa_data_name = "sq", output_dir = "/tmp") {
+plot_intermediate <- function(input_params, data_name, tawa_data_name = "sq", output_dir = "/tmp", data_scaler = 1000.0) {
   
   # Assuming create_hash_filename exists in your R environment. 
   # If input_params is a list, this functions similarly to the Python version.
@@ -7,80 +7,93 @@ plot_intermediate <- function(input_params, data_name, tawa_data_name = "sq", ou
   
   # --- Scenario 1: RUF Validation (Histogram/Bar) ---
   if (data_name == "ruf_validation") {
+
+    # 1. Error Distribution Bar Plot
+    err_dist_results <- read_csv(file.path(output_dir, paste0("validation_err_", filename_hash, ".csv")))
     
-    # Read Data
-    file_path <- file.path(output_dir, paste0("validation_err_", filename_hash, ".csv"))
-    err_dist_results <- read_csv(file_path, show_col_types = FALSE)
+    p1 <- ggplot(err_dist_results, aes(xmin = bin_start, xmax = bin_end, ymin = 0, ymax = count)) +
+      geom_rect(fill = "steelblue", color = "black", alpha = 0.7) +
+      theme_minimal() +
+      labs(title = "Error Distribution", x = "Bin Range", y = "Count")
     
-    # Calculate bin width logic (needed for geom_rect to mimic align='edge')
-    # In Python align='edge' means the bar starts at x and goes right.
+    ggsave(file.path(output_dir, paste0("ruf_validation_err_dist_", filename_hash, ".png")), 
+           plot = p1, width = 10, height = 6)
+
+    # 2. Scatter Plots with shared Colorbar
+    param_results <- read_csv(file.path(output_dir, paste0("utility_func_parameters_", filename_hash, ".csv")))
     
-    p <- ggplot(err_dist_results) +
-      geom_rect(aes(
-        xmin = bin_start,
-        xmax = bin_end,
-        ymin = 0,
-        ymax = count
-      ), 
-      fill = "steelblue", 
-      color = "black", 
-      alpha = 0.7) +
-      labs(title = "Validation Error Distribution") + # Added title for clarity
+    # Convert parameters to a named vector/list
+    params <- setNames(param_results$Value, param_results$parameter)
+    params_list <- params[c("beta_income_hhld", "beta_income_hhld2", "beta_leisure", "beta_leisure2", "beta_interaction")]
+    
+    data_to_check <- read_parquet(file.path(output_dir, paste0("utility_func_data_", filename_hash, ".parquet")))
+    
+    # Calculate Utility (Z)
+    # Ensure your R quadratic_utility function is vectorized
+    data_to_check$Z <- model_ruf_env$quadratic_utility(
+      params_list,
+      data_to_check$income,
+      data_to_check$income_hhld,
+      data_to_check$leisure
+    )
+    # Add leisure hours for coloring
+    data_to_check$leisure_hrs <- data_to_check$leisure * data_scaler / 23
+    
+    # Individual Income Plot
+    scatter1 <- ggplot(data_to_check, aes(x = income * data_scaler, y = Z, color = leisure_hrs)) +
+      geom_point(alpha = 0.7, size = 1.5) +
+      scale_color_viridis_c() +
+      labs(x = "Disposable Income ($, individual) per week", y = "Utility", color = "Leisure (hours)") +
       theme_minimal()
     
-    output_path <- file.path(output_dir, paste0("ruf_validation_err_dist_", filename_hash, ".png"))
-    ggsave(output_path, plot = p, width = 10, height = 6, dpi = 300)
+    # Household Income Plot
+    scatter2 <- ggplot(data_to_check, aes(x = income_hhld * 1000, y = Z, color = leisure_hrs)) +
+      geom_point(alpha = 0.7, size = 1.5) +
+      scale_color_viridis_c() +
+      labs(x = "Disposable Income ($, household) per week", y = "Utility", color = "Leisure (hours)") +
+      theme_minimal()
+
+    # Combine plots with patchwork (shared legend)
+    combined_scatter <- (scatter1 + scatter2) + 
+      plot_layout(guides = "collect") & 
+      theme(legend.position = "right")
     
-    print(paste0("The plots are written with hashname: ", filename_hash))
+    ggsave(file.path(output_dir, paste0("ruf_validation_scatter_", filename_hash, ".png")), 
+           plot = combined_scatter, width = 14, height = 6)
+    
+    print(paste("Validation plots written with hash:", filename_hash))
   }
   
-  # --- Scenario 2: RUF Sensitivity (Line Charts) ---
   if (data_name == "ruf_sensitivity") {
     
-    output_path1 <- file.path(output_dir, paste0("utility_employment_rate_", filename_hash, ".png"))
-    output_path2 <- file.path(output_dir, paste0("ruf_total_employment_hrs_", filename_hash, ".png"))
+    sensitivity_results <- read_csv(file.path(output_dir, paste0("sensitivity_tests_", filename_hash, ".csv")))
+    accuracy_results <- read_csv(file.path(output_dir, paste0("validation_score_", filename_hash, ".csv")))
     
-    # Read Data
-    sensitivity_results <- read_csv(file.path(output_dir, paste0("sensitivity_tests_", filename_hash, ".csv")), show_col_types = FALSE)
-    accuracy_results <- read_csv(file.path(output_dir, paste0("validation_score_", filename_hash, ".csv")), show_col_types = FALSE)
+    # Extract scores
+    hi_util_acc <- accuracy_results$value[accuracy_results$scores == "highest_utility_accuracy"]
+    tot_hrs_acc <- accuracy_results$value[accuracy_results$scores == "total_hrs_accuracy"]
+    r2_mcfadden <- accuracy_results$value[accuracy_results$scores == "r2_mcfadden"]
     
-    # Extract values using dplyr
-    highest_utility_accuracy <- accuracy_results %>% 
-      filter(scores == "highest_utility_accuracy") %>% 
-      pull(value)
-    
-    total_hrs_accuracy <- accuracy_results %>% 
-      filter(scores == "total_hrs_accuracy") %>% 
-      pull(value)
-    
-    r2_mcfadden <- accuracy_results %>% 
-      filter(scores == "r2_mcfadden") %>% 
-      pull(value)
-    
-    # Construct String
-    accuracy_score_str <- paste0(
-      "Total Utility Accuracy: ", round(highest_utility_accuracy, 2), " %, ",
-      "Total Hours Accuracy: ", round(total_hrs_accuracy, 2), " %; ",
-      "McFadden's R2: ", round(r2_mcfadden, 2)
+    accuracy_score_str <- sprintf(
+      "Total Utility Accuracy: %.2f%%, Total Hours Accuracy: %.2f%%; McFadden's R2: %.2f",
+      hi_util_acc, tot_hrs_acc, r2_mcfadden
     )
     
-    # --- Active Plot: Total Employment Hours ---
-    p2 <- ggplot(sensitivity_results, aes(x = scaler, y = total_employment_hrs)) +
-      geom_line() +
-      geom_vline(xintercept = 1.0, color = 'red', linetype = "dashed") +
-      geom_hline(yintercept = 1.0, color = 'blue', linetype = "dashed") +
-      # Matplotlib used PercentFormatter(xmax=1.0), implying 1.0 = 100%
-      scale_y_continuous(labels = scales::percent) + 
-      labs(
-        title = paste0("Employment behaviours with Random Utility Function \n ", accuracy_score_str),
-        x = "Income Scaler",
-        y = "Employment hours"
-      ) +
+    # Sensitivity Plot
+    p_sens <- ggplot(sensitivity_results, aes(x = scaler, y = total_employment_hrs)) +
+      geom_line(color = "black") +
+      geom_vline(xintercept = 1.0, color = "red", linetype = "dashed") +
+      geom_hline(yintercept = 1.0, color = "blue", linetype = "dashed") +
+      scale_y_continuous(labels = scales::percent_format()) +
+      labs(title = paste("Employment behaviours with Random Utility Function\n", accuracy_score_str),
+           x = "Income Scaler",
+           y = "Employment hours") +
       theme_minimal()
     
-    ggsave(output_path2, plot = p2, width = 10, height = 6, dpi = 300)
+    ggsave(file.path(output_dir, paste0("ruf_total_employment_hrs_", filename_hash, ".png")), 
+           plot = p_sens, width = 10, height = 6)
     
-    print(paste0("The plots are written with hashname: ", filename_hash))
+    print(paste("Sensitivity plots written with hash:", filename_hash))
   }
 }
 
