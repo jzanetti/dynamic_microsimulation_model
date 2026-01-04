@@ -105,12 +105,24 @@ def predict(data: DataFrame,
         utility_name = "utility_calibrated"
 
     if method == "top30": # the threshold is from top 30%
-        utility_thresholds = data.groupby(
-            "people_id")[utility_name].transform(lambda x: x.quantile(1 - 0.3))
-        predictions = data.loc[
-            data[utility_name] >= utility_thresholds]
-        predictions["hours"] = predictions.groupby(["household_id", "people_id"])["option_hours"].transform("mean")
-        # predictions = predictions[["household_id", "people_id", "hours"]].drop_duplicates()
+      
+        if use_hhld:
+            hhld_total_utility = data.groupby(['household_id', 'option_hours_id'])[utility_name].sum().reset_index(name='total_util')
+            hhld_total_utility['threshold'] = hhld_total_utility.groupby('household_id')['total_util'].transform(lambda x: x.quantile(0.70))
+            hhld_best_option = hhld_total_utility[hhld_total_utility['total_util'] >= hhld_total_utility['threshold']]
+            predictions = merge.merge(
+                data, 
+                hhld_best_option[['household_id', 'option_hours_id']], 
+                on=['household_id', 'option_hours_id'], 
+                how='inner'
+            )
+            predictions['hours'] = predictions.groupby(['household_id', 'people_id'])['option_hours'].transform('mean')
+        else:
+            utility_thresholds = data.groupby(
+                "people_id")[utility_name].transform(lambda x: x.quantile(1 - 0.3))
+            predictions = data.loc[
+                data[utility_name] >= utility_thresholds]
+            predictions["hours"] = predictions.groupby(["household_id", "people_id"])["option_hours"].transform("mean")
     else:
         if use_hhld:
             hhld_total_utility = data.groupby([
@@ -130,7 +142,7 @@ def predict(data: DataFrame,
                 "option_hours": "hours"
         })
 
-    return predictions
+    return predictions[["household_id", "people_id", "hours", "is_chosen"]].drop_duplicates()
 
 
 

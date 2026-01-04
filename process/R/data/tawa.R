@@ -75,7 +75,7 @@ run_ruf_for_tawa <- function(tawa_data,
   data_reform <- read_parquet(reform_data_path)
   
   # Logic for prediction
-  data_reform <- model_ruf_env$predict(data_reform, ruf_params, method = method, use_hhld = TRUE)
+  data_reform <- model_ruf_env$predict(data_reform, ruf_params, method = method, use_hhld = FALSE)
   
   print("Get TAWA RUF data (SQ)")
   data_sq <- read_parquet(file.path(output_dir, paste0("utility_func_data_", sq_hash, ".parquet")))

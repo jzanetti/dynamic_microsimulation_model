@@ -152,13 +152,26 @@ predict <- function(data, params, method = RUF_METHOD, scaler = 1.0, use_hhld = 
   }
   
   if (! is.null(method)) {
-    # Threshold is top 30% (quantile 0.7)
-    data[, utility_threshold := quantile(get(utility_name), probs = 0.7), by = people_id]
-    predictions <- data[get(utility_name) >= utility_threshold]
-    # Calculate mean hours for valid options
-    predictions[, hours := mean(option_hours), by = .(household_id, people_id)]
-    # Clean up temporary column
-    predictions[, utility_threshold := NULL]
+    
+    if (use_hhld) {
+      hhld_total_utility <- data[, .(total_util = sum(get(utility_name))), by = .(household_id, option_hours_id)]
+      hhld_best_option <- hhld_total_utility[
+        , .SD[total_util >= quantile(total_util, 0.70)], 
+        by = household_id
+      ]
+      predictions <- merge(
+        data,
+        hhld_best_option[, .(household_id, option_hours_id)],
+        by = c("household_id", "option_hours_id"),
+        all = FALSE # Inner join
+      )
+      predictions[, hours := mean(option_hours), by = .(household_id, people_id)]
+      
+    } else {
+      data[, utility_threshold := quantile(get(utility_name), probs = 0.7), by = people_id]
+      predictions <- data[get(utility_name) >= utility_threshold]
+      predictions[, hours := mean(option_hours), by = .(household_id, people_id)]
+    }
     
   } else {
     if (use_hhld) {
@@ -178,6 +191,15 @@ predict <- function(data, params, method = RUF_METHOD, scaler = 1.0, use_hhld = 
     
     setnames(predictions, "option_hours", "hours")
   }
+  
+  predictions <- predictions %>%
+    group_by(household_id, people_id, hours) %>%
+    mutate(is_chosen = as.integer(any(is_chosen == 1))) %>%
+    ungroup()
+  
+  setDT(predictions)
+  
+  predictions <- unique(predictions[, .(household_id, people_id, hours)])
   
   return(predictions)
 }
@@ -230,7 +252,7 @@ utility_func <- function(
       "beta_interaction" = list("initial" = 0.1, "bound" = c(-Inf, Inf))
     ),
     optima_method = "nloptr", # optim, nloptr, lbfgsb3c
-    maxit = 1000
+    maxit = 500
 ) {
   
   # ----------------------------

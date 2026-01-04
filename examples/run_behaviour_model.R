@@ -22,10 +22,10 @@ source("process/R/model/validation.R", local = model_validation_env)
 # ------------------------------------------------------------------------------
 # Configuration
 # ------------------------------------------------------------------------------
-run_model       <- TRUE
-run_calib       <- TRUE
-run_validation  <- TRUE
-run_sensitivity <- TRUE
+run_model       <- FALSE
+run_calib       <- FALSE
+run_validation  <- FALSE
+run_sensitivity <- FALSE
 run_predict     <- TRUE
 
 output_dir <- "etc/app/runs"
@@ -42,7 +42,7 @@ input_params <- list(
   apply_people_income_filter = NULL, 
   # apply_people_income_filter = list(min = 0.1, max = 0.5),
   
-  apply_household_income_filter = list(min = 0.1, max = 0.9),
+  apply_household_income_filter = list(min = 0.1, max = 0.3),
   apply_household_size_filter   = NULL,
   apply_earner_type_filter      = NULL
   

@@ -7,7 +7,6 @@ plot_intermediate <- function(input_params, data_name, tawa_data_name = "sq", ou
   
   # --- Scenario 1: RUF Validation (Histogram/Bar) ---
   if (data_name == "ruf_validation") {
-
     # 1. Error Distribution Bar Plot
     err_dist_results <- read_csv(file.path(output_dir, paste0("validation_err_", filename_hash, ".csv")))
     
@@ -54,8 +53,8 @@ plot_intermediate <- function(input_params, data_name, tawa_data_name = "sq", ou
       theme_minimal()
 
     # Combine plots with patchwork (shared legend)
-    combined_scatter <- (scatter1 + scatter2) + 
-      plot_layout(guides = "collect") & 
+    combined_scatter <- (scatter1 + scatter2) +
+      plot_layout(guides = "collect") +
       theme(legend.position = "right")
     
     ggsave(file.path(output_dir, paste0("ruf_validation_scatter_", filename_hash, ".png")), 
