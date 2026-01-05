@@ -58,3 +58,5 @@ TAX_BRACKETS <- list(
   list(15600, 0.175),
   list(0, 0.105)
 )
+
+INCOME_DATA_SCALER <- 1000.0

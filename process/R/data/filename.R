@@ -1,14 +1,11 @@
 
 
-create_hash_filename <- function(params, test_flag = TEST_RUN, filename_suffix = NULL) {
+create_hash_filename <- function(params, test_flag = FALSE, filename_suffix = NULL) {
   
   if (test_flag) {
     return ("test")
   }
   
-  # 1. Consistent JSON string
-  
-  # To mimic Python's sort_keys=True, we order the list by name if it has names
   if (is.list(params) && !is.null(names(params))) {
     params <- params[order(names(params))]
   }

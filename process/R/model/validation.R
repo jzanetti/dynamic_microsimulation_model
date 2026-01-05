@@ -13,15 +13,15 @@ run_ruf_sensitivity <- function(input_params,
   accuracy_output_path <- file.path(output_dir, paste0("validation_score_", filename_hash, ".csv"))
   results_path <- file.path(output_dir, paste0("sensitivity_tests_", filename_hash, ".csv"))
   
-  message(paste("Model estimated parameters are read from", model_output_path))
+  print(paste("Model estimated parameters are read from", model_output_path))
   model_params_df <- read_csv(model_output_path, show_col_types = FALSE)
   # Convert to named vector (equivalent to Python dict)
   model_params <- setNames(model_params_df$Value, model_params_df$parameter)
   
-  message(paste("Model training data are read from", data_output_path))
+  print(paste("Model training data are read from", data_output_path))
   data_to_check <- read_parquet(data_output_path)
   
-  message(paste("Model accuracy is read from", accuracy_output_path))
+  print(paste("Model accuracy is read from", accuracy_output_path))
   model_accuracy_df <- read_csv(accuracy_output_path, show_col_types = FALSE)
   model_accuracy <- setNames(model_accuracy_df$value, model_accuracy_df$scores)
   

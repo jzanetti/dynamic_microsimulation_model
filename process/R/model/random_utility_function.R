@@ -120,7 +120,7 @@ run_ruf_calibrate <- function(input_params, tawa_data_name, output_dir) {
   ruf_params_path <- file.path(output_dir, paste0("utility_func_parameters_", filename_hash, ".csv"))
   
   # Read Data and Params
-  data <- read_parquet(ruf_data_path)
+  data <- read_parquet(ruf_data_path, mmap = FALSE)
   setDT(data)
   
   params_df <- fread(ruf_params_path)
@@ -142,7 +142,7 @@ run_ruf_calibrate <- function(input_params, tawa_data_name, output_dir) {
 }
 
 predict <- function(data, params, method = RUF_METHOD, scaler = 1.0, use_hhld = FALSE) {
-  
+
   setDT(data)
   data <- cal_utility(data, params, income_scaler = scaler)
   
@@ -199,7 +199,7 @@ predict <- function(data, params, method = RUF_METHOD, scaler = 1.0, use_hhld = 
   
   setDT(predictions)
   
-  predictions <- unique(predictions[, .(household_id, people_id, hours)])
+  predictions <- unique(predictions[, .(household_id, people_id, hours, is_chosen)])
   
   return(predictions)
 }

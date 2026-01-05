@@ -37,7 +37,7 @@ prepare_ruf_inputs <- function(df_input,
                                market_income_name_per_hour, 
                                benefit_income_name_per_week, 
                                working_hours_name, 
-                               data_scaler = 1000.0, 
+                               data_scaler = INCOME_DATA_SCALER, 
                                data_output_path = NULL) {
   
   # 1. Setup data.table and select relevant columns
